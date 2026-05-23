@@ -1,0 +1,31 @@
+# دموی زنده با GitHub Pages (اختیاری — برای بعداً)
+
+هر وقت خواستی یه دموی زنده داشته باشی که کاربرا قبل از نصب قالب رو ببینن، این فولدر کمکت می‌کنه.
+
+## روش ۱ — دیپلوی خودکار (با همین فایل)
+
+۱. فایل `pages.yml` رو به این مسیر توی ریپوت منتقل کن:
+```
+.github/workflows/pages.yml
+```
+(یعنی توی ریشه‌ی ریپو یه پوشه‌ی `.github` بساز، توش `workflows`، و فایل رو بذار اونجا.)
+
+۲. توی گیت‌هاب برو **Settings → Pages → Source** و **GitHub Actions** رو انتخاب کن.
+
+۳. تمام. هر بار push کنی، دمو خودکار از روی `preview.html` آپدیت میشه:
+```
+https://USERNAME.github.io/REPO-NAME/
+```
+
+## روش ۲ — دستی (ساده‌تر، بدون این فایل)
+
+اصلاً نیازی به `pages.yml` نداری:
+
+۱. **Settings → Pages → Source → Deploy from a branch**
+۲. Branch روی `main`، پوشه روی `/ (root)`، **Save**
+۳. دمو روی این آدرس میاد بالا:
+```
+https://USERNAME.github.io/REPO-NAME/preview.html
+```
+
+> این فولدر (`_optional-github-pages`) رو می‌تونی از ریپو حذف کنی اگه نمی‌خوایش — جزو فایل‌های اصلی نیست.

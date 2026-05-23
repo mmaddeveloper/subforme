@@ -1,0 +1,78 @@
+# Live Device / IP Listing (Optional)
+
+By default the template shows only the **last device** that fetched the subscription,
+read from PasarGuard's `sub_last_user_agent` template variable.
+
+If you want to display **all** currently-connected IPs, you need a small custom
+endpoint on your panel that returns the online-IP list as JSON. The template will
+fetch it client-side.
+
+## Expected JSON shape
+
+```json
+[
+  { "ip": "1.2.3.4", "user_agent": "v2rayNG/1.8.5", "last_seen": 1716300000 },
+  { "ip": "5.6.7.8", "user_agent": "Hiddify/2.0",    "last_seen": 1716299000 }
+]
+```
+
+- `ip` — string, the connected IP address
+- `user_agent` — string, client User-Agent (used to detect app + OS)
+- `last_seen` — unix timestamp (seconds) or ISO date string
+
+## Wiring it into the template
+
+In `index.html`, find:
+
+```js
+const ONLINE_IPS_ENDPOINT = '';
+```
+
+and set it to your endpoint URL. Use `{token}` where the subscription token goes:
+
+```js
+const ONLINE_IPS_ENDPOINT = 'https://panel.example.com/api/sub/online/{token}';
+```
+
+The template extracts the token from `user.subscription_url` automatically, fetches
+the endpoint, and renders the live list. If the request fails, it silently falls back
+to the single last-known device.
+
+## Example endpoint (Python / FastAPI sketch)
+
+> This is a **sketch** to illustrate the idea — adapt it to your panel version and
+> auth model. It uses [node_bridge_py](https://github.com/PasarGuard/node_bridge_py)'s
+> `get_user_online_ip_list`.
+
+```python
+from fastapi import APIRouter, HTTPException
+
+router = APIRouter()
+
+@router.get("/api/sub/online/{token}")
+async def online_ips(token: str):
+    user = await get_user_by_sub_token(token)   # your lookup
+    if not user:
+        raise HTTPException(status_code=404)
+
+    results = []
+    for node in get_active_nodes():
+        try:
+            ips = await node.get_user_online_ip_list(user.email)
+            for entry in ips:
+                results.append({
+                    "ip": entry.ip,
+                    "user_agent": entry.user_agent or "",
+                    "last_seen": entry.last_seen,
+                })
+        except Exception:
+            continue
+    return results
+```
+
+## Security notes
+
+- The endpoint exposes connection metadata, so authorize requests by the subscription
+  token only (never expose other users' data).
+- Consider rate-limiting and CORS so only your subscription page can call it.
+- Do **not** log or store IPs longer than you need to.
