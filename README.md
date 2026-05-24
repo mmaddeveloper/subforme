@@ -39,20 +39,56 @@ Personalized themes, connected-device tracking, multi-language support — no bu
 
 ## Installation
 
-```bash
-# 1. Copy the template onto your server
-sudo mkdir -p /var/lib/pasarguard/templates/subscription
-sudo cp index.html /var/lib/pasarguard/templates/subscription/index.html
+### PasarGuard
 
-# 2. Point PasarGuard at it
-echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/pasarguard/templates/"' | sudo tee -a /opt/pasarguard/.env
-echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"'        | sudo tee -a /opt/pasarguard/.env
+1. **Download the template:**
+   ```sh
+   sudo wget -N -P /var/lib/pasarguard/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+   ```
 
-# 3. Restart
-pasarguard restart
-```
+2. **Point PasarGuard at it:**
+   ```sh
+   echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/pasarguard/templates/"' | sudo tee -a /opt/pasarguard/.env
+   echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"'        | sudo tee -a /opt/pasarguard/.env
+   ```
+   Or uncomment the matching lines in `/opt/pasarguard/.env` by removing the leading `#`.
+
+3. **Restart:**
+   ```sh
+   pasarguard restart
+   ```
+
+### Marzban
+
+1. **Download:**
+   ```sh
+   sudo wget -N -P /var/lib/marzban/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+   ```
+2. **Configure `.env`:**
+   ```sh
+   echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/marzban/templates/"' | sudo tee -a /opt/marzban/.env
+   echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"'    | sudo tee -a /opt/marzban/.env
+   ```
+3. **Restart:** `marzban restart`
+
+### Marzneshin
+
+1. **Download:**
+   ```sh
+   sudo wget -N -P /var/lib/marzneshin/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+   ```
+2. **Configure `.env`:**
+   ```sh
+   echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/marzneshin/templates/"' | sudo tee -a /etc/opt/marzneshin/.env
+   echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"'        | sudo tee -a /etc/opt/marzneshin/.env
+   ```
+3. **Restart:** `marzneshin restart`
 
 Open any user's subscription link in a browser and the new page appears.
+
+### Updating
+
+To update to the latest version, just re-run the `wget` command for your panel. The `-N` flag only re-downloads if the remote file is newer.
 
 ## Customization
 
@@ -149,13 +185,54 @@ Built for the [PasarGuard](https://github.com/PasarGuard/panel) panel.
 
 ### نصب
 
-```bash
-sudo mkdir -p /var/lib/pasarguard/templates/subscription
-sudo cp index.html /var/lib/pasarguard/templates/subscription/index.html
-echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/pasarguard/templates/"' | sudo tee -a /opt/pasarguard/.env
-echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"'        | sudo tee -a /opt/pasarguard/.env
-pasarguard restart
-```
+#### PasarGuard
+
+۱. **دانلود قالب با یک دستور:**
+   ```sh
+   sudo wget -N -P /var/lib/pasarguard/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+   ```
+
+۲. **تنظیم پنل (به `.env` اضافه کن):**
+   ```sh
+   echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/pasarguard/templates/"' | sudo tee -a /opt/pasarguard/.env
+   echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"'        | sudo tee -a /opt/pasarguard/.env
+   ```
+   یا اگر این خط‌ها در فایل `/opt/pasarguard/.env` با `#` کامنت شده‌اند، فقط `#` اول‌شان را پاک کن.
+
+۳. **ریستارت:**
+   ```sh
+   pasarguard restart
+   ```
+
+#### Marzban
+
+۱. **دانلود:**
+   ```sh
+   sudo wget -N -P /var/lib/marzban/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+   ```
+۲. **تنظیم `.env`:**
+   ```sh
+   echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/marzban/templates/"' | sudo tee -a /opt/marzban/.env
+   echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"'    | sudo tee -a /opt/marzban/.env
+   ```
+۳. **ریستارت:** `marzban restart`
+
+#### Marzneshin
+
+۱. **دانلود:**
+   ```sh
+   sudo wget -N -P /var/lib/marzneshin/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+   ```
+۲. **تنظیم `.env`:**
+   ```sh
+   echo 'CUSTOM_TEMPLATES_DIRECTORY="/var/lib/marzneshin/templates/"' | sudo tee -a /etc/opt/marzneshin/.env
+   echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"'        | sudo tee -a /etc/opt/marzneshin/.env
+   ```
+۳. **ریستارت:** `marzneshin restart`
+
+### بروزرسانی
+
+برای بروزرسانی به آخرین نسخه فقط کافیست دستور `wget` بالا را دوباره اجرا کنی — فلگ `-N` فقط در صورتی فایل را دانلود می‌کند که نسخه‌ی روی گیت‌هاب جدیدتر باشد.
 
 ### شخصی‌سازی
 لینک‌های پشتیبانی، تم پیش‌فرض و سایر تنظیمات در ابتدای بخش `<script>` فایل `index.html` قابل تغییرند. برای جزئیات بیشتر بخش انگلیسی بالا را ببینید.
