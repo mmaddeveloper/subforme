@@ -2258,7 +2258,7 @@ function renderUsageChart(data, period) {
     const y = 48 - h;
     const x = i * barW + barW * 0.1;
     const w = barW * 0.8;
-    const tip = `${fmtBucketLabel(d.t, period, true)} — ${fmtBytes(d.v).value}${fmtBytes(d.v).unit}`;
+    const tip = `${fmtBucketLabel(d.t, period, true)} — ${fmtSize(d.v).value}${fmtSize(d.v).unit}`;
     svg += `<rect class="bar" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(h, 0.4).toFixed(2)}" rx="0.3"><title>${escapeHtml(tip)}</title></rect>`;
   }
   // Add 3-5 axis labels evenly spaced
@@ -2283,7 +2283,7 @@ async function renderUsageStats() {
   }
   const aggregated = aggregateUsageByBucket(data.stats);
   const total = aggregated.reduce((s, d) => s + d.v, 0);
-  const f = fmtBytes(total);
+  const f = fmtSize(total);
   $('#usageTotalValue').textContent = f.value;
   $('#usageTotalUnit').textContent = f.unit;
   renderUsageChart(aggregated, CURRENT_USAGE_PERIOD);
