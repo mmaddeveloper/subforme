@@ -596,6 +596,15 @@ body::before {
   display: flex; align-items: center; gap: 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.device-name .ip-main {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.device-name .ip-main.no-ip { color: var(--ink-3); font-style: italic; }
 .device-name .badge-now {
   font-family: var(--mono);
   font-size: 8px;
@@ -1368,7 +1377,7 @@ const I18N = {
     usedOf: "از",
     remaining: "باقیمانده", expires: "انقضا", renewal: "تمدید",
     copyLink: "کپی لینک اشتراک",
-    connected: "دستگاه‌های", devicesAccent: "متصل",
+    connected: "آی‌پی‌های", devicesAccent: "متصل",
     getThe: "دانلود", appAccent: "اپ",
     servers: "سرور‌ها",
     needAccent: "نیاز به", helpAccent: "کمک؟",
@@ -1386,18 +1395,19 @@ const I18N = {
     alertExpired: "اشتراکت منقضی شده",
     alertExpiredDesc: "برای ادامه استفاده، الان تمدید کن",
     tierBronze: "BRONZE", tierSilver: "SILVER", tierGold: "GOLD", tierPlatinum: "PLATINUM",
-    deviceSingular: "دستگاه", devicePlural: "دستگاه",
+    deviceSingular: "آی‌پی", devicePlural: "آی‌پی",
     onlineNow: "آنلاین", allOffline: "همه آفلاین",
     online: "آنلاین", offline: "آفلاین",
-    thisDevice: "همین دستگاه",
-    noDevices: "هنوز دستگاهی متصل نشده",
-    noDevicesHint: "اشتراکت رو توی یه اپ اضافه کن تا اینجا نشون داده بشه",
+    thisDevice: "این آی‌پی",
+    noIp: "بدون آی‌پی",
+    noDevices: "هنوز آی‌پی فعالی نیست",
+    noDevicesHint: "اشتراکت رو توی یه اپ اضافه کن تا آی‌پی‌ها اینجا نشون داده بشن",
     noConfigs: "هنوز کانفیگی برای نمایش نیست",
     noConfigsHint: "از طریق اپ‌های بالا اشتراکت رو وارد کن — کانفیگ‌ها به‌صورت خودکار دانلود می‌شن",
     loadingConfigs: "در حال بارگذاری کانفیگ‌ها…",
     justNow: "همین الان", minAgo: "دقیقه پیش", hrAgo: "ساعت پیش", dayAgo: "روز پیش",
     refreshed: "به‌روز شد",
-    devicesNote: "این صفحه فقط آخرین دستگاهی که اشتراک رو دریافت کرده نشون می‌ده."
+    devicesNote: "این صفحه فقط آی‌پی آخرین دستگاهی که اشتراک رو دریافت کرده نشون می‌ده."
   },
   en: {
     welcomeBack: "WELCOME BACK",
@@ -1405,7 +1415,7 @@ const I18N = {
     usedOf: "USED OF",
     remaining: "REMAINING", expires: "EXPIRES IN", renewal: "RENEWAL",
     copyLink: "COPY SUBSCRIPTION LINK",
-    connected: "Connected", devicesAccent: "Devices",
+    connected: "Connected", devicesAccent: "IPs",
     getThe: "Get the", appAccent: "App",
     servers: "Servers",
     needAccent: "Need", helpAccent: "Help?",
@@ -1423,18 +1433,19 @@ const I18N = {
     alertExpired: "Subscription expired",
     alertExpiredDesc: "Renew to continue using the service",
     tierBronze: "BRONZE", tierSilver: "SILVER", tierGold: "GOLD", tierPlatinum: "PLATINUM",
-    deviceSingular: "device", devicePlural: "devices",
+    deviceSingular: "IP", devicePlural: "IPs",
     onlineNow: "online now", allOffline: "all offline",
     online: "ONLINE", offline: "OFFLINE",
-    thisDevice: "THIS DEVICE",
-    noDevices: "No devices connected yet",
-    noDevicesHint: "Add your subscription to an app to see it here",
+    thisDevice: "THIS IP",
+    noIp: "no IP",
+    noDevices: "No active IPs yet",
+    noDevicesHint: "Import this subscription in an app — IPs will appear here",
     noConfigs: "No configurations to show yet",
     noConfigsHint: "Import this subscription in one of the apps above — configs will load automatically",
     loadingConfigs: "Loading configurations…",
     justNow: "just now", minAgo: "min ago", hrAgo: "hr ago", dayAgo: "d ago",
     refreshed: "REFRESHED",
-    devicesNote: "This page shows only the last device that fetched the subscription."
+    devicesNote: "This page shows only the IP of the last device that fetched the subscription."
   }
 };
 
@@ -1897,9 +1908,13 @@ function renderDevicesList() {
     const card = document.createElement('div');
     card.className = 'device-card' + (d.current ? ' current' : '');
     const rel = relativeTime(d.lastSeen);
+
+    // IP is the headline. App + OS + time become the secondary metadata.
+    const hasIp = !!d.ip;
+    const primary = hasIp ? escapeHtml(d.ip) : escapeHtml(t.noIp);
     const metaParts = [];
-    if (d.os && d.os !== 'unknown') metaParts.push(d.os);
-    if (d.ip) metaParts.push(`<span class="ip">${escapeHtml(d.ip)}</span>`);
+    if (d.app) metaParts.push(escapeHtml(d.app));
+    if (d.os && d.os !== 'unknown') metaParts.push(escapeHtml(d.os));
     if (rel) metaParts.push(rel);
     const meta = metaParts.join(' <span class="sep">·</span> ');
 
@@ -1907,7 +1922,7 @@ function renderDevicesList() {
       <div class="device-icon">${deviceIconSvg(d.icon)}</div>
       <div class="device-info">
         <div class="device-name">
-          ${escapeHtml(d.app)}
+          <span class="ip-main${hasIp ? '' : ' no-ip'}">${primary}</span>
           ${d.current ? `<span class="badge-now">${t.thisDevice}</span>` : ''}
         </div>
         <div class="device-meta">${meta}</div>
