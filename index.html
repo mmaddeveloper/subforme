@@ -679,6 +679,8 @@ body::before {
   transition: all 0.15s;
   font-weight: 500;
 }
+/* Persian script is cursive — letter-spacing and uppercase break it. */
+[dir="rtl"] .usage-tab { letter-spacing: 0; text-transform: none; font-weight: 600; }
 .usage-tab:hover { color: var(--ink); border-color: var(--line-2); }
 .usage-tab.active { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
 .usage-summary {
@@ -696,7 +698,9 @@ body::before {
   border: 1px solid var(--line);
   border-radius: 14px;
   position: relative;
-  overflow: hidden;
+  /* deliberately NOT overflow:hidden — the tooltip and avg-line label
+     anchor on bars near the edges and need to extend past the wrap
+     padding without getting clipped. */
 }
 .usage-yaxis {
   position: absolute;
@@ -762,14 +766,17 @@ body::before {
 .usage-avg-line::after {
   content: attr(data-label);
   position: absolute;
-  inset-inline-end: 0;
-  top: -18px;
+  /* anchor on the inline-start side so the avg label can never collide
+     with the y-axis peak indicator (which sits inline-end) */
+  inset-inline-start: 0;
+  top: -7px;
   font-family: var(--mono); font-size: 10px;
   color: var(--ink-3);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   background: var(--surface);
   padding: 1px 6px;
   border-radius: 4px;
+  line-height: 1.2;
 }
 @keyframes usage-avg-fade {
   to { opacity: 1; }
@@ -782,7 +789,8 @@ body::before {
   display: grid; place-items: center;
   cursor: pointer;
   color: var(--ink-3);
-  margin-inline-start: auto;
+  margin-inline-start: auto;          /* push to the trailing edge of the row */
+  flex-shrink: 0;
   transition: all 0.15s;
 }
 .usage-refresh:hover { color: var(--ink); border-color: var(--line-2); }
@@ -2382,19 +2390,21 @@ function aggregateUsageByBucket(stats) {
 
 function fmtBucketLabel(date, period, full) {
   const locale = LANG === 'fa' ? 'fa-IR' : 'en-US';
-  const tz = { timeZone: DISPLAY_TZ };
+  // Force Gregorian explicitly — fa-IR otherwise renders Jalali, which
+  // would make the tooltip ("3 Khordad") inconsistent with the rest of
+  // the template (data limit, expiry) which all use Gregorian.
+  const base = { timeZone: DISPLAY_TZ, calendar: 'gregory' };
   if (period === 'day') {
-    if (full) return date.toLocaleString(locale, { ...tz, hour: '2-digit', minute: '2-digit', hour12: false });
-    // Short hour label, always 2 digits, in Tehran time, en digits so it stays
-    // narrow enough to fit between bars.
-    return new Intl.DateTimeFormat('en-US', { ...tz, hour: '2-digit', hour12: false }).format(date);
+    if (full) return date.toLocaleString(locale, { ...base, hour: '2-digit', minute: '2-digit', hour12: false });
+    // Short hour label, always 2 digits, narrow enough to fit between bars.
+    return new Intl.DateTimeFormat('en-US', { ...base, hour: '2-digit', hour12: false }).format(date);
   }
   if (period === 'week') {
-    if (full) return date.toLocaleDateString(locale, { ...tz, weekday: 'short', day: 'numeric', month: 'short' });
-    return date.toLocaleDateString(locale, { ...tz, weekday: 'narrow' });
+    if (full) return date.toLocaleDateString(locale, { ...base, weekday: 'short', day: 'numeric', month: 'short' });
+    return date.toLocaleDateString(locale, { ...base, weekday: 'narrow' });
   }
-  if (full) return date.toLocaleDateString(locale, { ...tz, day: 'numeric', month: 'short' });
-  return new Intl.DateTimeFormat('en-US', { ...tz, day: 'numeric' }).format(date);
+  if (full) return date.toLocaleDateString(locale, { ...base, day: 'numeric', month: 'short' });
+  return new Intl.DateTimeFormat('en-US', { ...base, day: 'numeric' }).format(date);
 }
 
 function renderUsageChart(data, period) {
@@ -2438,18 +2448,24 @@ function renderUsageChart(data, period) {
     axisCells.push(`<span style="flex:1;text-align:center;">${shouldLabel ? escapeHtml(fmtBucketLabel(data[i].t, period)) : ''}</span>`);
   }
 
-  // Average line positioned by % of chart height, with the chart starting
-  // at top:0 and ending at bottom:0. We invert because chart aligns bars
-  // bottom-up: bottom% = (avg/max)*100.
+  // Average line positioned by % of chart height (bottom: %). Suppress when
+  // there's only one bucket with traffic (avg == peak, so the line would
+  // ride exactly on top of the peak bar and the labels would collide), and
+  // when avg is so close to peak that the two labels would overlap visually.
   const avgPct = avg > 0 ? Math.min((avg / max) * 100, 100) : 0;
   const avgSize = fmtSize(avg);
-  const avgLine = avg > 0
-    ? `<div class="usage-avg-line" style="bottom:${avgPct.toFixed(2)}%" data-label="${I18N[LANG].usageAvg} · ${avgSize.value}${avgSize.unit}"></div>`
+  const showAvgLine = avg > 0 && nonZero.length > 1 && avgPct < 92;
+  const avgLineLabel = `${I18N[LANG].usageAvg} · ${avgSize.value}${avgSize.unit}`;
+  const avgLine = showAvgLine
+    ? `<div class="usage-avg-line" style="bottom:${avgPct.toFixed(2)}%" data-label="${escapeHtml(avgLineLabel)}"></div>`
     : '';
 
-  // Y-axis hint: just the peak value, top-right corner
+  // Y-axis hint: just the peak value, top-trailing corner. Skip entirely
+  // when nothing happened — "1 B peak" on an all-zero chart is misleading.
   const maxSize = fmtSize(max);
-  const yAxis = `<div class="usage-yaxis"><span class="max">${maxSize.value}${maxSize.unit}</span> ${I18N[LANG].usagePeak}</div>`;
+  const yAxis = total > 0
+    ? `<div class="usage-yaxis"><span class="max">${maxSize.value}${maxSize.unit}</span> ${escapeHtml(I18N[LANG].usagePeak)}</div>`
+    : '';
 
   wrap.innerHTML = `
     ${yAxis}
@@ -2499,11 +2515,13 @@ function renderUsageChart(data, period) {
   document.addEventListener('click', _usageDismissTip, { capture: true });
 }
 
-function renderUsageSkeleton() {
-  // Show ~18 dim pulsing bars while we wait for the real fetch so the user
-  // has a visual placeholder instead of an empty box flicker.
+function renderUsageSkeleton(period) {
+  // Dim pulsing placeholder while we wait for the real fetch. Match the
+  // bar count to what the real chart will render so swapping skeleton -> data
+  // doesn't shift bar widths visibly.
+  const count = period === 'day' ? 24 : period === 'week' ? 7 : 30;
   const wrap = $('#usageChartWrap');
-  const bars = Array.from({ length: 18 }, (_, i) => {
+  const bars = Array.from({ length: count }, (_, i) => {
     const h = 20 + ((Math.sin(i * 1.3) + 1) * 25); // pseudo-random heights
     return `<div class="usage-bar loading"><div class="fill" style="height:${h.toFixed(1)}%; animation-delay:${i * 80}ms"></div></div>`;
   }).join('');
@@ -2542,7 +2560,7 @@ function positionUsageTooltip(barEl, tooltip, wrap) {
 
 async function renderUsageStats() {
   $('#usagePeriodLabel').textContent = I18N[LANG]['usagePeriod_' + CURRENT_USAGE_PERIOD];
-  renderUsageSkeleton();
+  renderUsageSkeleton(CURRENT_USAGE_PERIOD);
   const data = await fetchUsage(CURRENT_USAGE_PERIOD);
   if (!data) {
     renderUsageChart([], CURRENT_USAGE_PERIOD);
