@@ -121,8 +121,33 @@ def get_devices(token: str):
             seen[key] = {"ip": ip, "user_agent": ua, "last_seen": ts}
 
     devices = sorted(seen.values(), key=lambda d: d["last_seen"], reverse=True)
+
+    # If every IP we got back is loopback, the panel is almost certainly
+    # behind a proxy with UVICORN_PROXY_HEADERS=False. Log a one-shot hint
+    # so the admin can fix it instead of wondering why everyone is the same.
+    _maybe_warn_loopback(devices)
+
     _cache[token] = (now, devices)
     return devices
+
+
+_warned_loopback = False
+def _maybe_warn_loopback(devices):
+    global _warned_loopback
+    if _warned_loopback or not devices:
+        return
+    loopback = {"127.0.0.1", "::1"}
+    ips = [d.get("ip") for d in devices if d.get("ip")]
+    if ips and all(ip in loopback for ip in ips):
+        print(
+            "[bridge] all client IPs returned by the panel are loopback — "
+            "this almost always means UVICORN_PROXY_HEADERS=False on the "
+            "panel (nginx forwards from 127.0.0.1, uvicorn ignores "
+            "X-Forwarded-For). Add UVICORN_PROXY_HEADERS=true to the "
+            "panel's .env and restart it.",
+            file=sys.stderr,
+        )
+        _warned_loopback = True
 
 
 class Handler(BaseHTTPRequestHandler):

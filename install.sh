@@ -85,7 +85,15 @@ echo "    ✓ template downloaded"
 touch "$ENV_FILE"
 grep -q '^CUSTOM_TEMPLATES_DIRECTORY' "$ENV_FILE" || echo "CUSTOM_TEMPLATES_DIRECTORY=\"$TEMPLATE_BASE\"" >> "$ENV_FILE"
 grep -q '^SUBSCRIPTION_PAGE_TEMPLATE' "$ENV_FILE" || echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "$ENV_FILE"
-echo "    ✓ panel .env configured"
+# When the panel sits behind nginx (which is how it's typically deployed,
+# and how the bridge is exposed via /sub-online/ too), uvicorn's default
+# ProxyHeaders=False makes request.client.host the loopback peer (127.0.0.1)
+# for every visitor — so user_subscription_updates.ip ends up as 127.0.0.1
+# for everyone, and the "Connected IPs" section becomes useless. Turn on
+# X-Forwarded-For trust. Default forwarded_allow_ips already restricts this
+# to 127.0.0.1, which is correct for nginx-on-same-host setups.
+grep -q '^UVICORN_PROXY_HEADERS' "$ENV_FILE" || echo 'UVICORN_PROXY_HEADERS=true' >> "$ENV_FILE"
+echo "    ✓ panel .env configured (incl. UVICORN_PROXY_HEADERS=true for real client IPs)"
 
 # -------------------- 3) bridge --------------------
 if [ "$INSTALL_BRIDGE" = "true" ]; then

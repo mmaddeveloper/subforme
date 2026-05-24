@@ -300,6 +300,33 @@ const ONLINE_IPS_ENDPOINT = 'https://panel.example.com/sub-online/{token}';
   the `Access-Control-Allow-Origin` header (replace `*` above).
 - A 30-second cache is included to absorb refresh spam.
 
+### Required panel setting: `UVICORN_PROXY_HEADERS=true`
+
+If your panel runs behind nginx (the standard deploy), PasarGuard's
+default `UVICORN_PROXY_HEADERS=False` makes `request.client.host` the
+TCP peer — i.e. `127.0.0.1` — for every visitor. Every row in
+`user_subscription_updates.ip` then ends up as `127.0.0.1`, and the
+bridge will faithfully return that for everyone.
+
+Fix once, on the panel's `.env`:
+
+```sh
+echo 'UVICORN_PROXY_HEADERS=true' | sudo tee -a /opt/pasarguard/.env
+pasarguard restart
+```
+
+The default `UVICORN_FORWARDED_ALLOW_IPS=127.0.0.1` is correct for the
+common nginx-on-same-host setup. If your reverse proxy is on a different
+machine, set `UVICORN_FORWARDED_ALLOW_IPS` to its IP (don't use `*` on a
+public-facing panel — anyone can then spoof `X-Forwarded-For`).
+
+> **Cloudflare users:** the IP you'll see is Cloudflare's edge IP. To
+> pass through the real visitor IP, configure your nginx to rewrite
+> `X-Forwarded-For` from `CF-Connecting-IP` before forwarding to uvicorn.
+
+The one-line `install.sh` adds `UVICORN_PROXY_HEADERS=true` automatically;
+existing manual installs need this line in `.env` to see real IPs.
+
 ---
 
 ## Wiring it up in `index.html`
