@@ -9,52 +9,93 @@ Env vars (loaded from systemd EnvironmentFile):
     PORT            local bind port (default 8787)
     LIMIT           max history rows to request (default 50)
     CACHE_SECONDS   per-token cache TTL (default 30)
+    CACHE_MAX       max cached tokens (default 4096, LRU evicts above this)
 """
 
 import json
 import os
 import sys
+import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
+from collections import OrderedDict
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-PANEL_URL = os.environ["PANEL_URL"].rstrip("/")
-ADMIN_USER = os.environ["PG_ADMIN_USER"]
-ADMIN_PASS = os.environ["PG_ADMIN_PASS"]
-PORT = int(os.environ.get("PORT", "8787"))
-LIMIT = int(os.environ.get("LIMIT", "50"))
-CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "30"))
 
-_jwt = None
-_jwt_exp = 0.0
-_cache: dict = {}
+def _require_env(name: str) -> str:
+    v = os.environ.get(name)
+    if not v:
+        sys.stderr.write(f"[bridge] missing required env var {name} — set it in /opt/subforme-bridge/.env\n")
+        sys.exit(2)
+    return v
 
 
-def _http(method, url, data=None, headers=None, timeout=10):
+PANEL_URL = _require_env("PANEL_URL").rstrip("/")
+ADMIN_USER = _require_env("PG_ADMIN_USER")
+ADMIN_PASS = _require_env("PG_ADMIN_PASS")
+try:
+    PORT = int(os.environ.get("PORT", "8787"))
+    LIMIT = int(os.environ.get("LIMIT", "50"))
+    CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "30"))
+    CACHE_MAX = int(os.environ.get("CACHE_MAX", "4096"))
+except ValueError as _e:
+    sys.stderr.write(f"[bridge] invalid numeric env var: {_e}\n")
+    sys.exit(2)
+
+_jwt: str | None = None
+_jwt_exp: float = 0.0
+_jwt_lock = threading.Lock()
+
+_cache: "OrderedDict[str, tuple[float, list]]" = OrderedDict()
+_cache_lock = threading.Lock()
+
+
+def _http(method: str, url: str, data=None, headers=None, timeout: int = 10):
+    """Wrapper that swallows non-2xx into a (status, body) pair instead of
+    raising HTTPError — so callers can branch on status rather than guess
+    which exceptions to catch."""
     req = urllib.request.Request(url, data=data, method=method)
     for k, v in (headers or {}).items():
         req.add_header(k, v)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return r.status, r.read()
+    req.add_header("User-Agent", "subforme-bridge/1.0")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        # body still readable for diagnostics; status is the error code
+        try:
+            body = e.read()
+        except Exception:
+            body = b""
+        return e.code, body
 
 
-def get_admin_jwt():
+def get_admin_jwt(force_refresh: bool = False) -> str:
+    """Single-flight admin JWT refresh. The lock prevents two threads from
+    both POSTing to /api/admin/token under contention."""
     global _jwt, _jwt_exp
-    if _jwt and time.time() < _jwt_exp:
+    with _jwt_lock:
+        if not force_refresh and _jwt and time.time() < _jwt_exp:
+            return _jwt
+        body = urllib.parse.urlencode({"username": ADMIN_USER, "password": ADMIN_PASS}).encode()
+        status, payload = _http(
+            "POST",
+            f"{PANEL_URL}/api/admin/token",
+            data=body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        if status != 200:
+            raise RuntimeError(f"admin auth failed: {status} {payload[:200]!r}")
+        token = json.loads(payload).get("access_token")
+        if not token:
+            raise RuntimeError("admin auth response had no access_token")
+        _jwt = token
+        # Keep a generous safety margin under the panel's 1h default
+        _jwt_exp = time.time() + 50 * 60
         return _jwt
-    body = urllib.parse.urlencode({"username": ADMIN_USER, "password": ADMIN_PASS}).encode()
-    status, payload = _http(
-        "POST",
-        f"{PANEL_URL}/api/admin/token",
-        data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    if status != 200:
-        raise RuntimeError(f"admin auth failed: {status}")
-    _jwt = json.loads(payload)["access_token"]
-    _jwt_exp = time.time() + 50 * 60
-    return _jwt
 
 
 def _to_unix(iso: str) -> int:
@@ -64,7 +105,6 @@ def _to_unix(iso: str) -> int:
     if not iso:
         return 0
     try:
-        from datetime import datetime, timezone
         dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
@@ -73,40 +113,72 @@ def _to_unix(iso: str) -> int:
         return 0
 
 
-def get_devices(token: str):
-    now = time.time()
-    hit = _cache.get(token)
-    if hit and now - hit[0] < CACHE_SECONDS:
+def _cache_get(token: str):
+    with _cache_lock:
+        hit = _cache.get(token)
+        if hit is None:
+            return None
+        if time.time() - hit[0] >= CACHE_SECONDS:
+            _cache.pop(token, None)
+            return None
+        _cache.move_to_end(token)  # LRU bump
         return hit[1]
 
-    tail = token[-6:] if len(token) >= 6 else token  # for logs, never the full token
 
-    # Step 1: token -> username (no admin auth needed)
+def _cache_put(token: str, devices: list):
+    with _cache_lock:
+        _cache[token] = (time.time(), devices)
+        _cache.move_to_end(token)
+        while len(_cache) > CACHE_MAX:
+            _cache.popitem(last=False)  # evict oldest
+
+
+def get_devices(token: str):
+    cached = _cache_get(token)
+    if cached is not None:
+        return cached
+
+    tail = token[-6:] if len(token) > 12 else "***"  # never echo short tokens
+
+    # Step 1: token -> username (public endpoint, no admin auth).
+    # safe="" makes quote() escape slashes too — otherwise a token containing
+    # "/" would let a caller traverse to other endpoints.
+    quoted_token = urllib.parse.quote(token, safe="")
+    status, payload = _http("GET", f"{PANEL_URL}/sub/{quoted_token}/info")
+    if status != 200:
+        print(f"[bridge] info lookup for …{tail} returned {status}", file=sys.stderr)
+        return []
     try:
-        _, payload = _http("GET", f"{PANEL_URL}/sub/{urllib.parse.quote(token)}/info")
         info = json.loads(payload)
     except Exception as e:
-        print(f"[bridge] info lookup failed for …{tail}: {e}", file=sys.stderr)
+        print(f"[bridge] info JSON parse failed for …{tail}: {e}", file=sys.stderr)
         return []
     username = info.get("username")
     if not username:
         print(f"[bridge] no username in /info response for …{tail}", file=sys.stderr)
         return []
 
-    # Step 2: pull IP + UA history with admin auth
-    try:
-        jwt = get_admin_jwt()
-        status, payload = _http(
-            "GET",
-            f"{PANEL_URL}/api/users/{urllib.parse.quote(username)}/sub_update?limit={LIMIT}",
-            headers={"Authorization": f"Bearer {jwt}"},
-        )
-        if status != 200:
-            print(f"[bridge] sub_update for {username} returned {status}", file=sys.stderr)
+    # Step 2: pull IP + UA history with admin auth. Retry once on 401 in case
+    # the cached JWT was revoked (admin password rotated, panel restart).
+    quoted_user = urllib.parse.quote(username, safe="")
+    url = f"{PANEL_URL}/api/users/{quoted_user}/sub_update?limit={LIMIT}"
+    for attempt in range(2):
+        try:
+            jwt = get_admin_jwt(force_refresh=(attempt == 1))
+        except Exception as e:
+            print(f"[bridge] admin auth failed: {e}", file=sys.stderr)
             return []
+        status, payload = _http("GET", url, headers={"Authorization": f"Bearer {jwt}"})
+        if status == 401 and attempt == 0:
+            continue  # JWT expired/revoked, refresh and retry once
+        break
+    if status != 200:
+        print(f"[bridge] sub_update for {username} returned {status}", file=sys.stderr)
+        return []
+    try:
         updates = json.loads(payload).get("updates", []) or []
     except Exception as e:
-        print(f"[bridge] sub_update lookup failed for {username}: {e}", file=sys.stderr)
+        print(f"[bridge] sub_update JSON parse failed for {username}: {e}", file=sys.stderr)
         return []
 
     # Step 3: dedupe by ip+UA, newest-first
@@ -122,41 +194,51 @@ def get_devices(token: str):
 
     devices = sorted(seen.values(), key=lambda d: d["last_seen"], reverse=True)
 
-    # If every IP we got back is loopback, the panel is almost certainly
-    # behind a proxy with UVICORN_PROXY_HEADERS=False. Log a one-shot hint
-    # so the admin can fix it instead of wondering why everyone is the same.
     _maybe_warn_loopback(devices)
-
-    _cache[token] = (now, devices)
+    _cache_put(token, devices)
     return devices
 
 
 _warned_loopback = False
+_warn_lock = threading.Lock()
+
+
 def _maybe_warn_loopback(devices):
+    """If every IP we got back is loopback, the panel is almost certainly
+    behind a proxy with UVICORN_PROXY_HEADERS=False. One-shot stderr hint."""
     global _warned_loopback
-    if _warned_loopback or not devices:
+    if not devices:
         return
     loopback = {"127.0.0.1", "::1"}
     ips = [d.get("ip") for d in devices if d.get("ip")]
-    if ips and all(ip in loopback for ip in ips):
-        print(
-            "[bridge] all client IPs returned by the panel are loopback — "
-            "this almost always means UVICORN_PROXY_HEADERS=False on the "
-            "panel (nginx forwards from 127.0.0.1, uvicorn ignores "
-            "X-Forwarded-For). Add UVICORN_PROXY_HEADERS=true to the "
-            "panel's .env and restart it.",
-            file=sys.stderr,
-        )
+    if not ips or not all(ip in loopback for ip in ips):
+        return
+    with _warn_lock:
+        if _warned_loopback:
+            return
         _warned_loopback = True
+    print(
+        "[bridge] all client IPs returned by the panel are loopback — this "
+        "almost always means UVICORN_PROXY_HEADERS=False on the panel "
+        "(nginx forwards from 127.0.0.1, uvicorn ignores X-Forwarded-For). "
+        "Add UVICORN_PROXY_HEADERS=true to the panel's .env and restart it.",
+        file=sys.stderr,
+    )
 
 
 class Handler(BaseHTTPRequestHandler):
-    def _json(self, status, body):
+    def _json(self, status: int, body):
         raw = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        # The bridge sits behind same-origin nginx by default; allow only the
+        # request's own origin so other sites can't read someone's IP history
+        # if they happen to obtain a sub token.
+        origin = self.headers.get("Origin")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -171,10 +253,15 @@ class Handler(BaseHTTPRequestHandler):
         token = path[len(prefix):].strip("/")
         if not token:
             return self._json(400, {"error": "missing token"})
+        # The token comes from the URL path; reject anything that obviously
+        # isn't a token (control chars, slashes, very long strings).
+        if len(token) > 256 or any(c in token for c in "/\\\x00"):
+            return self._json(400, {"error": "invalid token"})
         try:
             return self._json(200, get_devices(token))
         except Exception as e:
-            print(f"[bridge] error for token={token[:6]}…: {e}", file=sys.stderr)
+            tail = token[-6:] if len(token) > 12 else "***"
+            print(f"[bridge] unhandled error for token=…{tail}: {e}", file=sys.stderr)
             return self._json(500, [])
 
     def log_message(self, *_):

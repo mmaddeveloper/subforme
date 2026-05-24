@@ -88,20 +88,45 @@ echo "    bridge:     $([ "$INSTALL_BRIDGE" = true ] && echo "yes (port $BRIDGE_
 echo
 
 # Download helper — uses curl if available (the same binary that piped this
-# script), else falls back to wget. Downloads to a temp path then moves into
-# place so a sed-patched destination doesn't fool `wget -N` on re-runs.
+# script), else falls back to wget. Temp file lives in the destination
+# directory so the final `mv` is atomic (rename within the same FS); /tmp
+# may be a separate tmpfs on some distros, which would degrade mv to a
+# non-atomic copy+unlink and let the panel briefly see a partial template.
 download() {
-    local url="$1" out="$2" tmp
-    tmp="$(mktemp)"
+    local url="$1" out="$2" tmp dest_dir status
+    dest_dir="$(dirname "$out")"
+    mkdir -p "$dest_dir"
+    tmp="$(mktemp "$dest_dir/.subforme.XXXXXX")" || return 1
     if command -v curl >/dev/null 2>&1; then
-        curl -fsSL --retry 2 "$url" -o "$tmp" || { rm -f "$tmp"; return 1; }
+        curl -fsSL --retry 2 --max-time 60 "$url" -o "$tmp" || { rm -f "$tmp"; return 1; }
     elif command -v wget >/dev/null 2>&1; then
-        wget -qO "$tmp" "$url" || { rm -f "$tmp"; return 1; }
+        # `--server-response` would print headers; we just want the exit code
+        # to reflect HTTP errors. `wget` defaults to leaving 4xx/5xx bodies
+        # on disk — `-q --tries=2 --timeout=60` with explicit status check.
+        if ! wget -q --tries=2 --timeout=60 -O "$tmp" "$url"; then
+            rm -f "$tmp"; return 1
+        fi
     else
         echo "✗ need curl or wget" >&2; rm -f "$tmp"; return 1
     fi
     [ -s "$tmp" ] || { echo "✗ downloaded $url is empty" >&2; rm -f "$tmp"; return 1; }
     mv "$tmp" "$out"
+}
+
+# Reject password characters that systemd's EnvironmentFile parser can't
+# round-trip: leading whitespace is stripped, `#` starts a comment, raw
+# newlines split the value. Returns 0 if safe, prints reason and 1 otherwise.
+validate_env_value() {
+    local label="$1" value="$2"
+    case "$value" in
+        " "*|"	"*)
+            echo "✗ $label cannot start with whitespace (systemd strips it)" >&2; return 1 ;;
+        *"#"*)
+            echo "✗ $label contains '#' which systemd treats as a comment — please change the panel admin password" >&2; return 1 ;;
+        *$'\n'*|*$'\r'*)
+            echo "✗ $label contains a newline — please change the panel admin password" >&2; return 1 ;;
+    esac
+    return 0
 }
 
 # -------------------- 1) template --------------------
@@ -111,7 +136,14 @@ echo "    ✓ template downloaded"
 
 # -------------------- 2) panel .env --------------------
 touch "$ENV_FILE"
-grep -q '^CUSTOM_TEMPLATES_DIRECTORY' "$ENV_FILE" || echo "CUSTOM_TEMPLATES_DIRECTORY=\"$TEMPLATE_BASE\"" >> "$ENV_FILE"
+if grep -q '^CUSTOM_TEMPLATES_DIRECTORY' "$ENV_FILE"; then
+    EXISTING_DIR=$(sed -n 's/^CUSTOM_TEMPLATES_DIRECTORY=//p' "$ENV_FILE" | head -1 | sed 's/^"//;s/"$//')
+    if [ "$EXISTING_DIR" != "$TEMPLATE_BASE" ]; then
+        echo "    ⚠ CUSTOM_TEMPLATES_DIRECTORY is already $EXISTING_DIR — leaving it. If the panel doesn't pick up the new template, change it to $TEMPLATE_BASE manually" >&2
+    fi
+else
+    echo "CUSTOM_TEMPLATES_DIRECTORY=\"$TEMPLATE_BASE\"" >> "$ENV_FILE"
+fi
 grep -q '^SUBSCRIPTION_PAGE_TEMPLATE' "$ENV_FILE" || echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "$ENV_FILE"
 # When the panel sits behind nginx (which is how it's typically deployed,
 # and how the bridge is exposed via /sub-online/ too), uvicorn's default
@@ -145,6 +177,8 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
     if [ -z "$ADMIN_PASS" ]; then read -rsp "panel admin password: " ADMIN_PASS; echo; fi
     [ -z "$ADMIN_USER" ] && { echo "✗ admin username is required (--admin USER)" >&2; exit 1; }
     [ -z "$ADMIN_PASS" ] && { echo "✗ admin password is required (--pass PASS)" >&2; exit 1; }
+    validate_env_value "admin username" "$ADMIN_USER" || exit 1
+    validate_env_value "admin password" "$ADMIN_PASS" || exit 1
 
     mkdir -p "$BRIDGE_DIR"
     if ! download "$REPO_RAW/bridge/bridge.py" "$BRIDGE_DIR/bridge.py"; then
@@ -202,11 +236,18 @@ EOF
         echo "    ✗ bridge failed to start — check: journalctl -u subforme-bridge -n 50"
     fi
 
-    # Patch ONLINE_IPS_ENDPOINT in the freshly-downloaded template
-    if grep -q "const ONLINE_IPS_ENDPOINT = '';" "$TEMPLATE_DIR/index.html"; then
+    # Patch ONLINE_IPS_ENDPOINT in the freshly-downloaded template. Three
+    # possible states: unset (empty string in template), already set to our
+    # value (re-run / update), or set to something else (custom edit).
+    if grep -q "const ONLINE_IPS_ENDPOINT = '/sub-online/{token}';" "$TEMPLATE_DIR/index.html"; then
+        echo "    ✓ template ONLINE_IPS_ENDPOINT already wired to bridge"
+    elif grep -q "const ONLINE_IPS_ENDPOINT = '';" "$TEMPLATE_DIR/index.html"; then
         sed -i.bak "s|const ONLINE_IPS_ENDPOINT = '';|const ONLINE_IPS_ENDPOINT = '/sub-online/{token}';|" "$TEMPLATE_DIR/index.html"
         rm -f "$TEMPLATE_DIR/index.html.bak"
         echo "    ✓ template ONLINE_IPS_ENDPOINT set to /sub-online/{token}"
+    else
+        echo "    ⚠ couldn't find the ONLINE_IPS_ENDPOINT marker in the template — the live-IPs feature won't work until you edit it manually" >&2
+        echo "    ⚠ open $TEMPLATE_DIR/index.html and set: const ONLINE_IPS_ENDPOINT = '/sub-online/{token}';" >&2
     fi
 
     cat <<NGINX
@@ -227,8 +268,11 @@ echo "==> Restarting panel: $RESTART_CMD"
 $RESTART_CMD || echo "    (couldn't restart automatically — run '$RESTART_CMD' yourself)"
 
 echo "==> Done."
+# Exit from inside the function so that, when invoked via `curl | bash`,
+# bash never tries to read further commands after the function returns
+# from a stdin that was redirected to /dev/tty mid-script.
+exit 0
 
 }  # end _subforme_main
 
 _subforme_main "$@"
-exit $?
