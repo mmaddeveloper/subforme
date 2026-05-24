@@ -181,10 +181,18 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
     validate_env_value "admin password" "$ADMIN_PASS" || exit 1
 
     mkdir -p "$BRIDGE_DIR"
-    if ! download "$REPO_RAW/bridge/bridge.py" "$BRIDGE_DIR/bridge.py"; then
-        echo "✗ couldn't download bridge.py from github" >&2; exit 1
+    echo "    ↻ downloading bridge service..."
+    # Try the release asset first (served from GitHub's release CDN, which is
+    # usually reachable even where raw.githubusercontent.com is throttled);
+    # fall back to the raw URL on main if the release lookup fails.
+    if ! download "$RELEASE_LATEST/bridge.py" "$BRIDGE_DIR/bridge.py" \
+       && ! download "$REPO_RAW/bridge/bridge.py" "$BRIDGE_DIR/bridge.py"; then
+        echo "✗ couldn't download bridge.py — both the release asset and raw URL failed" >&2
+        echo "    try manually: curl -fsSL $RELEASE_LATEST/bridge.py -o $BRIDGE_DIR/bridge.py" >&2
+        exit 1
     fi
     chmod +x "$BRIDGE_DIR/bridge.py"
+    echo "    ✓ bridge service downloaded"
 
     # Write .env with printf so values containing $, `, \, " survive intact
     # (heredoc would expand them). umask makes the file root-only.
