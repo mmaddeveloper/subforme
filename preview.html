@@ -695,12 +695,25 @@ body::before {
   border: 1px solid var(--line);
   border-radius: 14px;
   position: relative;
+  overflow: hidden;
 }
+.usage-yaxis {
+  position: absolute;
+  top: 8px; inset-inline-end: 10px;
+  font-family: var(--mono); font-size: 8px;
+  color: var(--ink-4);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  pointer-events: none;
+  opacity: 0.85;
+}
+.usage-yaxis .max { color: var(--ink-3); font-weight: 600; }
 .usage-chart {
   display: flex;
   align-items: flex-end;
-  height: 90px;
+  height: 96px;
   gap: 3px;
+  position: relative;
 }
 .usage-bar {
   flex: 1;
@@ -711,17 +724,74 @@ body::before {
 }
 .usage-bar .fill {
   width: 100%;
-  background: linear-gradient(to top, var(--accent), color-mix(in srgb, var(--accent) 60%, transparent));
+  background: linear-gradient(to top, var(--accent), color-mix(in srgb, var(--accent) 50%, transparent));
   border-radius: 3px 3px 1px 1px;
   min-height: 2px;
   transition: filter 0.15s, transform 0.15s;
   transform-origin: bottom;
+  animation: usage-bar-grow 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .usage-bar:hover .fill,
-.usage-bar.active .fill { filter: brightness(1.2); transform: scaleY(1.03); }
+.usage-bar.active .fill { filter: brightness(1.25); transform: scaleY(1.04); }
 .usage-bar.zero .fill {
   background: var(--line-2);
-  opacity: 0.5;
+  opacity: 0.45;
+  animation: none;
+}
+.usage-bar.peak .fill {
+  background: linear-gradient(to top, var(--accent-2, var(--accent)), color-mix(in srgb, var(--accent-2, var(--accent)) 70%, transparent));
+  filter: brightness(1.1);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2, var(--accent)) 40%, transparent);
+}
+@keyframes usage-bar-grow {
+  from { transform: scaleY(0); opacity: 0.2; }
+  to   { transform: scaleY(1); opacity: 1; }
+}
+.usage-avg-line {
+  position: absolute;
+  left: 0; right: 0;
+  border-top: 1px dashed color-mix(in srgb, var(--ink-3) 60%, transparent);
+  pointer-events: none;
+  opacity: 0;
+  animation: usage-avg-fade 800ms ease 400ms forwards;
+}
+.usage-avg-line::after {
+  content: attr(data-label);
+  position: absolute;
+  inset-inline-end: 0;
+  top: -14px;
+  font-family: var(--mono); font-size: 8px;
+  color: var(--ink-3);
+  letter-spacing: 0.06em;
+  background: var(--surface);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+@keyframes usage-avg-fade {
+  to { opacity: 1; }
+}
+.usage-refresh {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  width: 30px; height: 30px;
+  display: grid; place-items: center;
+  cursor: pointer;
+  color: var(--ink-3);
+  margin-inline-start: auto;
+  transition: all 0.15s;
+}
+.usage-refresh:hover { color: var(--ink); border-color: var(--line-2); }
+.usage-refresh.spinning svg { animation: usage-spin 700ms linear; }
+@keyframes usage-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.usage-bar.loading .fill {
+  background: var(--line-2);
+  opacity: 0.4;
+  animation: usage-pulse 1.4s ease-in-out infinite;
+}
+@keyframes usage-pulse {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 0.55; }
 }
 .usage-axis {
   display: flex; justify-content: space-between;
@@ -1335,6 +1405,11 @@ body::before {
       <button type="button" class="usage-tab active" data-period="day" data-i18n="usageDaily">Today</button>
       <button type="button" class="usage-tab" data-period="week" data-i18n="usageWeekly">Week</button>
       <button type="button" class="usage-tab" data-period="month" data-i18n="usageMonthly">Month</button>
+      <button type="button" class="usage-refresh" id="usageRefresh" aria-label="Refresh">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+      </button>
     </div>
     <div class="usage-summary">
       <div class="usage-total">
@@ -1529,6 +1604,9 @@ const I18N = {
     usagePeriod_day: "۲۴ ساعت گذشته",
     usagePeriod_week: "۷ روز گذشته",
     usagePeriod_month: "۳۰ روز گذشته",
+    usageAvg: "میانگین",
+    usagePeak: "اوج",
+    usageOfTotal: "از کل",
     noUsageYet: "هنوز مصرفی ثبت نشده",
     noDevices: "هنوز آی‌پی فعالی نیست",
     noDevicesHint: "اشتراکت رو توی یه اپ اضافه کن تا آی‌پی‌ها اینجا نشون داده بشن",
@@ -1577,6 +1655,9 @@ const I18N = {
     usagePeriod_day: "last 24 hours",
     usagePeriod_week: "last 7 days",
     usagePeriod_month: "last 30 days",
+    usageAvg: "avg",
+    usagePeak: "peak",
+    usageOfTotal: "of total",
     noUsageYet: "no usage recorded yet",
     noDevices: "No active IPs yet",
     noDevicesHint: "Import this subscription in an app — IPs will appear here",
@@ -2302,11 +2383,22 @@ function renderUsageChart(data, period) {
   }
 
   const max = Math.max(...data.map(d => d.v), 1);
+  const peakIdx = data.reduce((best, d, i) => d.v > data[best].v ? i : best, 0);
+  // Average only over buckets that had some traffic — averaging across 30
+  // days when the user only had usage for 3 of them makes the "avg" line
+  // ride the floor and feel useless.
+  const nonZero = data.filter(d => d.v > 0);
+  const avg = nonZero.length ? nonZero.reduce((s, d) => s + d.v, 0) / nonZero.length : 0;
+  const total = data.reduce((s, d) => s + d.v, 0);
+
   const bars = data.map((d, i) => {
     const pct = max > 0 ? Math.max((d.v / max) * 100, 1) : 0;
     const zeroCls = d.v === 0 ? ' zero' : '';
-    return `<div class="usage-bar${zeroCls}" data-i="${i}">
-      <div class="fill" style="height:${pct.toFixed(2)}%"></div>
+    const peakCls = (i === peakIdx && d.v > 0) ? ' peak' : '';
+    // Stagger the grow-in animation so bars cascade in, looks alive
+    const delayMs = Math.min(i * 18, 350);
+    return `<div class="usage-bar${zeroCls}${peakCls}" data-i="${i}">
+      <div class="fill" style="height:${pct.toFixed(2)}%; animation-delay:${delayMs}ms"></div>
     </div>`;
   }).join('');
 
@@ -2323,13 +2415,30 @@ function renderUsageChart(data, period) {
     axisCells.push(`<span style="flex:1;text-align:center;">${shouldLabel ? escapeHtml(fmtBucketLabel(data[i].t, period)) : ''}</span>`);
   }
 
+  // Average line positioned by % of chart height, with the chart starting
+  // at top:0 and ending at bottom:0. We invert because chart aligns bars
+  // bottom-up: bottom% = (avg/max)*100.
+  const avgPct = avg > 0 ? Math.min((avg / max) * 100, 100) : 0;
+  const avgSize = fmtSize(avg);
+  const avgLine = avg > 0
+    ? `<div class="usage-avg-line" style="bottom:${avgPct.toFixed(2)}%" data-label="${I18N[LANG].usageAvg} · ${avgSize.value}${avgSize.unit}"></div>`
+    : '';
+
+  // Y-axis hint: just the peak value, top-right corner
+  const maxSize = fmtSize(max);
+  const yAxis = `<div class="usage-yaxis"><span class="max">${maxSize.value}${maxSize.unit}</span> ${I18N[LANG].usagePeak}</div>`;
+
   wrap.innerHTML = `
-    <div class="usage-chart">${bars}</div>
+    ${yAxis}
+    <div class="usage-chart">
+      ${bars}
+      ${avgLine}
+    </div>
     <div class="usage-axis">${axisCells.join('')}</div>
     <div class="usage-tooltip" id="usageTooltip"></div>
   `;
 
-  // Wire up hover tooltips
+  // Wire up hover/tap tooltips
   const chart = wrap.querySelector('.usage-chart');
   const tooltip = $('#usageTooltip');
   chart.querySelectorAll('.usage-bar').forEach(barEl => {
@@ -2338,7 +2447,12 @@ function renderUsageChart(data, period) {
     const onEnter = () => {
       const when = fmtBucketLabel(d.t, period, true);
       const sz = fmtSize(d.v);
-      tooltip.innerHTML = `<div class="when">${escapeHtml(when)}</div><div class="what">${sz.value}<span style="opacity:0.6"> ${sz.unit}</span></div>`;
+      const pct = total > 0 ? ((d.v / total) * 100) : 0;
+      const pctStr = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
+      tooltip.innerHTML = `
+        <div class="when">${escapeHtml(when)}</div>
+        <div class="what">${sz.value}<span style="opacity:0.6"> ${sz.unit}</span></div>
+        <div class="when" style="margin-top:2px;margin-bottom:0;">${pctStr}% ${escapeHtml(I18N[LANG].usageOfTotal)}</div>`;
       tooltip.classList.add('show');
       barEl.classList.add('active');
       positionUsageTooltip(barEl, tooltip, wrap);
@@ -2349,10 +2463,8 @@ function renderUsageChart(data, period) {
     };
     barEl.addEventListener('mouseenter', onEnter);
     barEl.addEventListener('mouseleave', onLeave);
-    // Touch / tap support
     barEl.addEventListener('click', e => {
       e.stopPropagation();
-      // Clear any other active bar
       chart.querySelectorAll('.usage-bar.active').forEach(b => b !== barEl && b.classList.remove('active'));
       if (tooltip.classList.contains('show') && barEl.classList.contains('active')) {
         onLeave();
@@ -2361,8 +2473,22 @@ function renderUsageChart(data, period) {
       }
     });
   });
-  // Dismiss tooltip on outside click
   document.addEventListener('click', _usageDismissTip, { capture: true });
+}
+
+function renderUsageSkeleton() {
+  // Show ~18 dim pulsing bars while we wait for the real fetch so the user
+  // has a visual placeholder instead of an empty box flicker.
+  const wrap = $('#usageChartWrap');
+  const bars = Array.from({ length: 18 }, (_, i) => {
+    const h = 20 + ((Math.sin(i * 1.3) + 1) * 25); // pseudo-random heights
+    return `<div class="usage-bar loading"><div class="fill" style="height:${h.toFixed(1)}%; animation-delay:${i * 80}ms"></div></div>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div class="usage-chart">${bars}</div>
+    <div class="usage-axis"></div>
+    <div class="usage-tooltip" id="usageTooltip"></div>
+  `;
 }
 
 function _usageDismissTip(e) {
@@ -2393,6 +2519,7 @@ function positionUsageTooltip(barEl, tooltip, wrap) {
 
 async function renderUsageStats() {
   $('#usagePeriodLabel').textContent = I18N[LANG]['usagePeriod_' + CURRENT_USAGE_PERIOD];
+  renderUsageSkeleton();
   const data = await fetchUsage(CURRENT_USAGE_PERIOD);
   if (!data) {
     renderUsageChart([], CURRENT_USAGE_PERIOD);
@@ -2418,6 +2545,13 @@ function initUsageStatsTabs() {
       renderUsageStats();
     };
   });
+  const refresh = $('#usageRefresh');
+  if (refresh) {
+    refresh.onclick = () => {
+      refresh.classList.add('spinning');
+      renderUsageStats().finally(() => setTimeout(() => refresh.classList.remove('spinning'), 700));
+    };
+  }
 }
 
 function renderSupport() {
