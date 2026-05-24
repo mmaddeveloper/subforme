@@ -13,6 +13,10 @@ desktop.ini
 node_modules/
 package-lock.json
 
+# Python (bridge service)
+__pycache__/
+*.pyc
+
 # Local previews with real data — never commit real user data
 preview-local.html
 *.local.html
