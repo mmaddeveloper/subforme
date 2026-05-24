@@ -72,6 +72,19 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
         echo "✗ python3 not found — skip bridge with --no-bridge or install python3" >&2; exit 1
     fi
 
+    # Reuse credentials from a prior install so re-running the script is
+    # silent (true update). Flags (--admin / --pass) still override.
+    if [ -f "$BRIDGE_DIR/.env" ]; then
+        # shellcheck disable=SC1091
+        OLD_USER=$(grep -E '^PG_ADMIN_USER=' "$BRIDGE_DIR/.env" | cut -d= -f2-)
+        OLD_PASS=$(grep -E '^PG_ADMIN_PASS=' "$BRIDGE_DIR/.env" | cut -d= -f2-)
+        OLD_PURL=$(grep -E '^PANEL_URL='     "$BRIDGE_DIR/.env" | cut -d= -f2-)
+        [ -z "$ADMIN_USER" ] && ADMIN_USER="$OLD_USER"
+        [ -z "$ADMIN_PASS" ] && ADMIN_PASS="$OLD_PASS"
+        [ "$PANEL_URL" = "http://127.0.0.1:8000" ] && [ -n "$OLD_PURL" ] && PANEL_URL="$OLD_PURL"
+        echo "    ✓ reusing existing bridge credentials"
+    fi
+
     if [ -z "$ADMIN_USER" ]; then read -rp "panel admin username: " ADMIN_USER; fi
     if [ -z "$ADMIN_PASS" ]; then read -rsp "panel admin password: " ADMIN_PASS; echo; fi
 
@@ -106,7 +119,8 @@ WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable --now subforme-bridge
+    systemctl enable subforme-bridge >/dev/null 2>&1 || true
+    systemctl restart subforme-bridge   # picks up bridge.py + .env changes on re-runs
     sleep 1
     if systemctl is-active --quiet subforme-bridge; then
         echo "    ✓ bridge running on 127.0.0.1:$BRIDGE_PORT"

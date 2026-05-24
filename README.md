@@ -109,7 +109,13 @@ Open any user's subscription link in a browser and the new page appears.
 
 ### Updating
 
-To update to the latest version, **re-run the same `wget` command you used to install**, then restart your panel. The `-N` flag only re-downloads if the file on GitHub is newer than what you have, so it's safe to run any time.
+**If you installed with the one-line installer**, re-run the same command — it's idempotent, reuses your saved bridge credentials, picks up any new template & bridge code, and restarts the service:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mmaddeveloper/subforme/main/install.sh | sudo bash
+```
+
+**If you installed manually (template only)**, re-run the same `wget` command, then restart your panel. The `-N` flag only re-downloads if the file on GitHub is newer than what you have, so it's safe to run any time.
 
 **PasarGuard:**
 ```sh
@@ -273,7 +279,17 @@ Built for the [PasarGuard](https://github.com/PasarGuard/panel) panel.
 
 ### بروزرسانی
 
-برای بروزرسانی به آخرین نسخه، **همون دستور `wget` که اول نصب کردی رو دوباره اجرا کن** و بعد پنل رو ری‌استارت کن. به‌خاطر فلگ `-N`، فقط در صورتی فایل دانلود می‌شه که نسخه‌ی روی گیت‌هاب جدیدتر باشه — یعنی هر وقت بخوای می‌تونی این دستور رو اجرا کنی، بدون نگرانی.
+**اگه با اسکریپت یک‌خطی نصب کردی**، فقط همون دستور رو دوباره بزن — اسکریپت idempotent‌ـه و:
+
+- کاربر و پسورد ادمین رو از نصب قبلی می‌خونه (پس دوباره نمی‌پرسه)
+- آخرین نسخه‌ی قالب و سرویس پل رو می‌گیره
+- سرویس `subforme-bridge` رو ری‌استارت می‌کنه تا تغییرات اعمال بشن
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mmaddeveloper/subforme/main/install.sh | sudo bash
+```
+
+**اگه دستی نصب کرده بودی (فقط قالب، بدون پل)**، همون دستور `wget` که اول زدی رو دوباره اجرا کن و پنل رو ری‌استارت کن. به‌خاطر فلگ `-N`، فقط در صورتی فایل دانلود می‌شه که نسخه‌ی روی گیت‌هاب جدیدتر باشه — یعنی هر وقت بخوای می‌تونی این دستور رو اجرا کنی، بدون نگرانی.
 
 **PasarGuard:**
 ```sh
