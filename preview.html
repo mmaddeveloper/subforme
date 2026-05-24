@@ -734,6 +734,24 @@ body::before {
 .app-name { font-size: 13px; font-weight: 500; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .app-desc { font-family: var(--mono); font-size: 9px; color: var(--ink-3); letter-spacing: 0.04em; }
 .app-tile.featured .app-desc { color: var(--accent); }
+.app-tile-main {
+  display: flex; align-items: center; gap: 12px;
+  flex: 1; min-width: 0;
+  text-decoration: none; color: inherit;
+}
+.app-tile-dl {
+  display: grid; place-items: center;
+  width: 30px; height: 30px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  color: var(--ink-3);
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.app-tile-dl:hover { color: var(--accent); border-color: var(--accent); background: var(--surface); }
+.app-tile.featured .app-tile-dl { background: rgba(0,0,0,0.15); }
 
 /* =========================================================
    CONFIGS
@@ -1307,13 +1325,25 @@ wireguard://abc@server.com:51820#🌐 WireGuard EU
    ========================================================= */
 const _pgEl = document.getElementById('pgData');
 const _rawLinks = document.getElementById('pgLinks').textContent || '';
+
+// PasarGuard/Marzban sometimes leave user.subscription_url empty or relative.
+// Since this page IS served from the subscription URL, the current location
+// is an always-correct fallback (panels return raw configs to VPN clients
+// based on User-Agent, and HTML to browsers — same URL, different content).
+function resolveSubscriptionUrl(raw) {
+  if (raw && /^https?:\/\//i.test(raw)) return raw;
+  const path = window.location.pathname.replace(/\/$/, '') || '/';
+  if (raw && raw.startsWith('/')) return window.location.origin + raw;
+  return window.location.origin + path;
+}
+
 const PG = {
   username: _pgEl.dataset.username || 'guest',
   status: _pgEl.dataset.status || 'active',
   data_limit: parseInt(_pgEl.dataset.dataLimit, 10) || 0,
   used_traffic: parseInt(_pgEl.dataset.usedTraffic, 10) || 0,
   expire: parseInt(_pgEl.dataset.expire, 10) || 0,
-  subscription_url: _pgEl.dataset.subscriptionUrl || '',
+  subscription_url: resolveSubscriptionUrl(_pgEl.dataset.subscriptionUrl),
   last_agent: _pgEl.dataset.lastAgent || '',
   sub_updated: _pgEl.dataset.subUpdated || '',
   online_at: _pgEl.dataset.onlineAt || '',
@@ -1347,6 +1377,8 @@ const I18N = {
     expired: "منقضی", days: "روز", hours: "ساعت", min: "دقیقه",
     status_active: "آنلاین", status_limited: "محدود", status_expired: "منقضی", status_disabled: "غیرفعال", status_on_hold: "در انتظار",
     recommend: "پیشنهادی",
+    installApp: "دانلود اپ",
+    webBrowser: "مرورگر وب",
     renew: "تمدید کن",
     alertExpireSoon: "اشتراکت داره تموم میشه!",
     alertExpireSoonDesc: "برای جلوگیری از قطع شدن، الان تمدید کن",
@@ -1380,6 +1412,8 @@ const I18N = {
     expired: "Expired", days: "days", hours: "hrs", min: "min",
     status_active: "ONLINE", status_limited: "LIMITED", status_expired: "EXPIRED", status_disabled: "DISABLED", status_on_hold: "ON HOLD",
     recommend: "RECOMMENDED",
+    installApp: "Download app",
+    webBrowser: "Web Browser",
     renew: "RENEW NOW",
     alertExpireSoon: "Your subscription expires soon!",
     alertExpireSoonDesc: "Renew now to avoid interruption",
@@ -1414,33 +1448,33 @@ const AVATARS = ['👤', '🦊', '🐺', '🦅', '🐉', '🦁', '🐯', '🐻',
 
 const APPS = {
   android: [
-    { name: "Hiddify Next", desc: "Recommended", featured: true, scheme: (url) => `hiddify://import/${url}` },
-    { name: "v2rayNG", desc: "Free · Open Source", featured: false, scheme: (url) => `v2rayng://install-sub?url=${encodeURIComponent(url)}` },
-    { name: "NekoBox", desc: "Multi-protocol", featured: false, scheme: (url) => `sn://subscription?url=${encodeURIComponent(url)}` },
-    { name: "Husi", desc: "Lite & fast", featured: false, scheme: (url) => `sn://subscription?url=${encodeURIComponent(url)}` }
+    { name: "Hiddify Next", desc: "Recommended", featured: true,  scheme: (url) => `hiddify://import/${url}`,                             download: "https://github.com/hiddify/hiddify-app/releases/latest" },
+    { name: "v2rayNG",      desc: "Free · Open Source", featured: false, scheme: (url) => `v2rayng://install-sub?url=${encodeURIComponent(url)}`, download: "https://github.com/2dust/v2rayNG/releases/latest" },
+    { name: "NekoBox",      desc: "Multi-protocol",     featured: false, scheme: (url) => `sn://subscription?url=${encodeURIComponent(url)}`,    download: "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases/latest" },
+    { name: "Husi",         desc: "Lite & fast",        featured: false, scheme: (url) => `sn://subscription?url=${encodeURIComponent(url)}`,    download: "https://github.com/xchacha20-poly1305/husi/releases/latest" }
   ],
   ios: [
-    { name: "Hiddify", desc: "Recommended", featured: true, scheme: (url) => `hiddify://import/${url}` },
-    { name: "Streisand", desc: "Free", featured: false, scheme: (url) => `streisand://import/${url}` },
-    { name: "v2Box", desc: "Multi-protocol", featured: false, scheme: (url) => `v2box://install-sub?url=${encodeURIComponent(url)}` },
-    { name: "Shadowrocket", desc: "Paid", featured: false, scheme: (url) => `sub://${btoa(url)}` }
+    { name: "Hiddify",      desc: "Recommended",    featured: true,  scheme: (url) => `hiddify://import/${url}`,                             download: "https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532" },
+    { name: "Streisand",    desc: "Free",           featured: false, scheme: (url) => `streisand://import/${url}`,                          download: "https://apps.apple.com/app/streisand/id6450534064" },
+    { name: "v2Box",        desc: "Multi-protocol", featured: false, scheme: (url) => `v2box://install-sub?url=${encodeURIComponent(url)}`, download: "https://apps.apple.com/app/v2box-v2ray-client/id6446814690" },
+    { name: "Shadowrocket", desc: "Paid",           featured: false, scheme: (url) => `sub://${btoa(url)}`,                                  download: "https://apps.apple.com/app/shadowrocket/id932747118" }
   ],
   windows: [
-    { name: "Hiddify Next", desc: "Recommended", featured: true, scheme: (url) => `hiddify://import/${url}` },
-    { name: "NekoRay", desc: "Multi-protocol", featured: false, scheme: null },
-    { name: "v2rayN", desc: "Classic", featured: false, scheme: null },
-    { name: "Furious", desc: "Modern UI", featured: false, scheme: null }
+    { name: "Hiddify Next", desc: "Recommended",    featured: true,  scheme: (url) => `hiddify://import/${url}`, download: "https://github.com/hiddify/hiddify-app/releases/latest" },
+    { name: "NekoRay",      desc: "Multi-protocol", featured: false, scheme: null, download: "https://github.com/MatsuriDayo/nekoray/releases/latest" },
+    { name: "v2rayN",       desc: "Classic",        featured: false, scheme: null, download: "https://github.com/2dust/v2rayN/releases/latest" },
+    { name: "Furious",      desc: "Modern UI",      featured: false, scheme: null, download: "https://github.com/LorenEteval/Furious/releases/latest" }
   ],
   mac: [
-    { name: "Hiddify", desc: "Recommended", featured: true, scheme: (url) => `hiddify://import/${url}` },
-    { name: "FoXray", desc: "Native", featured: false, scheme: null },
-    { name: "V2RayU", desc: "Classic", featured: false, scheme: null },
-    { name: "ClashX Meta", desc: "Multi-protocol", featured: false, scheme: null }
+    { name: "Hiddify",      desc: "Recommended",    featured: true,  scheme: (url) => `hiddify://import/${url}`, download: "https://github.com/hiddify/hiddify-app/releases/latest" },
+    { name: "FoXray",       desc: "Native",         featured: false, scheme: null, download: "https://apps.apple.com/app/foxray/id6448898396" },
+    { name: "V2RayU",       desc: "Classic",        featured: false, scheme: null, download: "https://github.com/yanue/V2rayU/releases/latest" },
+    { name: "ClashX Meta",  desc: "Multi-protocol", featured: false, scheme: null, download: "https://github.com/MetaCubeX/ClashX.Meta/releases/latest" }
   ],
   linux: [
-    { name: "Hiddify", desc: "Recommended", featured: true, scheme: (url) => `hiddify://import/${url}` },
-    { name: "NekoRay", desc: "Multi-protocol", featured: false, scheme: null },
-    { name: "v2rayA", desc: "Web UI", featured: false, scheme: null }
+    { name: "Hiddify",      desc: "Recommended",    featured: true,  scheme: (url) => `hiddify://import/${url}`, download: "https://github.com/hiddify/hiddify-app/releases/latest" },
+    { name: "NekoRay",      desc: "Multi-protocol", featured: false, scheme: null, download: "https://github.com/MatsuriDayo/nekoray/releases/latest" },
+    { name: "v2rayA",       desc: "Web UI",         featured: false, scheme: null, download: "https://github.com/v2rayA/v2rayA/releases/latest" }
   ]
 };
 
@@ -1801,6 +1835,24 @@ function buildDevicesFromLocal() {
       });
     }
   }
+
+  // Fallback: if nothing else is available (typical on first visit, before
+  // any VPN client has fetched the subscription), show the current viewer's
+  // browser session so the section isn't empty.
+  if (devices.length === 0) {
+    const os = detectOS();
+    const osLabel = { android: 'Android', ios: 'iOS', windows: 'Windows', mac: 'macOS', linux: 'Linux' }[os] || 'Unknown';
+    devices.push({
+      app: I18N[LANG].webBrowser,
+      os: osLabel,
+      icon: os,
+      ip: null,
+      lastSeen: Math.floor(Date.now() / 1000),
+      current: true,
+      online: true
+    });
+  }
+
   return devices;
 }
 
@@ -1923,25 +1975,42 @@ function renderApps() {
   const items = APPS[CURRENT_OS] || [];
   grid.innerHTML = '';
   items.forEach(app => {
-    const a = document.createElement('a');
-    a.className = 'app-tile' + (app.featured ? ' featured' : '');
+    const wrap = document.createElement('div');
+    wrap.className = 'app-tile' + (app.featured ? ' featured' : '');
+
+    const main = document.createElement('a');
+    main.className = 'app-tile-main';
     if (app.scheme) {
-      a.href = app.scheme(PG.subscription_url);
+      main.href = app.scheme(PG.subscription_url);
     } else {
-      a.href = '#';
-      a.onclick = (e) => {
+      main.href = '#';
+      main.onclick = (e) => {
         e.preventDefault();
         navigator.clipboard.writeText(PG.subscription_url);
         toast(I18N[LANG].copied + ' · ' + app.name);
       };
     }
-    a.innerHTML = `
+    main.innerHTML = `
       <div class="app-icon">${app.name.charAt(0)}</div>
       <div class="app-info">
         <div class="app-name">${escapeHtml(app.name)}</div>
         <div class="app-desc">${app.featured ? '★ ' + I18N[LANG].recommend : escapeHtml(app.desc)}</div>
       </div>`;
-    grid.appendChild(a);
+    wrap.appendChild(main);
+
+    if (app.download) {
+      const dl = document.createElement('a');
+      dl.className = 'app-tile-dl';
+      dl.href = app.download;
+      dl.target = '_blank';
+      dl.rel = 'noopener noreferrer';
+      dl.title = I18N[LANG].installApp;
+      dl.setAttribute('aria-label', I18N[LANG].installApp);
+      dl.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M5 10l7 7 7-7M5 21h14"/></svg>';
+      wrap.appendChild(dl);
+    }
+
+    grid.appendChild(wrap);
   });
 }
 
@@ -2114,7 +2183,7 @@ $('#langBtn').onclick = () => {
   applyI18n();
   renderIdentity();
   renderUsage();
-  renderDevicesList();
+  renderDevices();
   renderApps();
   renderSupport();
   renderSmartAlert();
