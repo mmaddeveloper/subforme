@@ -10,9 +10,18 @@
 
 set -euo pipefail
 
+# First thing: prove we started — so users piping via `curl | sudo bash` see
+# *something* immediately even if a later step fails silently.
+echo "==> subforme installer — starting" >&2
+
 # When piped via `curl | bash`, stdin is the script — `read` would consume
 # script bytes instead of typed input. Re-attach stdin to the real terminal.
-if [ ! -t 0 ] && [ -r /dev/tty ]; then exec 0</dev/tty; fi
+# Wrap in `|| true` so a non-readable /dev/tty (no controlling terminal, some
+# CI/SSH configs) doesn't kill the whole script under set -e. We'll only need
+# stdin if credentials weren't passed via flags.
+if [ ! -t 0 ] && [ -r /dev/tty ]; then
+    exec 0</dev/tty 2>/dev/null || echo "    (note: couldn't reattach to /dev/tty — pass --admin USER --pass PASS to run non-interactively)" >&2
+fi
 
 # -------------------- defaults --------------------
 PANEL="${PANEL:-pasarguard}"
