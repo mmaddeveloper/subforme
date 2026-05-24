@@ -642,16 +642,16 @@ body::before {
   animation: ping 1.6s ease-out infinite;
 }
 
-.devices-empty {
+.devices-empty, .configs-empty {
   padding: 32px 20px;
   text-align: center;
   border: 1px dashed var(--line-2);
   border-radius: 14px;
   color: var(--ink-3);
 }
-.devices-empty .ic { font-size: 28px; margin-bottom: 8px; opacity: 0.5; }
-.devices-empty .txt { font-size: 13px; }
-.devices-empty .hint { font-family: var(--mono); font-size: 10px; color: var(--ink-4); margin-top: 6px; letter-spacing: 0.04em; }
+.devices-empty .ic, .configs-empty .ic { font-size: 28px; margin-bottom: 8px; opacity: 0.5; }
+.devices-empty .txt, .configs-empty .txt { font-size: 13px; }
+.devices-empty .hint, .configs-empty .hint { font-family: var(--mono); font-size: 10px; color: var(--ink-4); margin-top: 6px; letter-spacing: 0.04em; }
 
 .devices-note {
   margin-top: 10px;
@@ -1374,7 +1374,6 @@ const I18N = {
     status_active: "آنلاین", status_limited: "محدود", status_expired: "منقضی", status_disabled: "غیرفعال", status_on_hold: "در انتظار",
     recommend: "پیشنهادی",
     installApp: "دانلود اپ",
-    webBrowser: "مرورگر وب",
     renew: "تمدید کن",
     alertExpireSoon: "اشتراکت داره تموم میشه!",
     alertExpireSoonDesc: "برای جلوگیری از قطع شدن، الان تمدید کن",
@@ -1389,6 +1388,9 @@ const I18N = {
     thisDevice: "همین دستگاه",
     noDevices: "هنوز دستگاهی متصل نشده",
     noDevicesHint: "اشتراکت رو توی یه اپ اضافه کن تا اینجا نشون داده بشه",
+    noConfigs: "هنوز کانفیگی برای نمایش نیست",
+    noConfigsHint: "از طریق اپ‌های بالا اشتراکت رو وارد کن — کانفیگ‌ها به‌صورت خودکار دانلود می‌شن",
+    loadingConfigs: "در حال بارگذاری کانفیگ‌ها…",
     justNow: "همین الان", minAgo: "دقیقه پیش", hrAgo: "ساعت پیش", dayAgo: "روز پیش",
     refreshed: "به‌روز شد",
     devicesNote: "این صفحه فقط آخرین دستگاهی که اشتراک رو دریافت کرده نشون می‌ده."
@@ -1409,7 +1411,6 @@ const I18N = {
     status_active: "ONLINE", status_limited: "LIMITED", status_expired: "EXPIRED", status_disabled: "DISABLED", status_on_hold: "ON HOLD",
     recommend: "RECOMMENDED",
     installApp: "Download app",
-    webBrowser: "Web Browser",
     renew: "RENEW NOW",
     alertExpireSoon: "Your subscription expires soon!",
     alertExpireSoonDesc: "Renew now to avoid interruption",
@@ -1424,6 +1425,9 @@ const I18N = {
     thisDevice: "THIS DEVICE",
     noDevices: "No devices connected yet",
     noDevicesHint: "Add your subscription to an app to see it here",
+    noConfigs: "No configurations to show yet",
+    noConfigsHint: "Import this subscription in one of the apps above — configs will load automatically",
+    loadingConfigs: "Loading configurations…",
     justNow: "just now", minAgo: "min ago", hrAgo: "hr ago", dayAgo: "d ago",
     refreshed: "REFRESHED",
     devicesNote: "This page shows only the last device that fetched the subscription."
@@ -1831,24 +1835,6 @@ function buildDevicesFromLocal() {
       });
     }
   }
-
-  // Fallback: if nothing else is available (typical on first visit, before
-  // any VPN client has fetched the subscription), show the current viewer's
-  // browser session so the section isn't empty.
-  if (devices.length === 0) {
-    const os = detectOS();
-    const osLabel = { android: 'Android', ios: 'iOS', windows: 'Windows', mac: 'macOS', linux: 'Linux' }[os] || 'Unknown';
-    devices.push({
-      app: I18N[LANG].webBrowser,
-      os: osLabel,
-      icon: os,
-      ip: null,
-      lastSeen: Math.floor(Date.now() / 1000),
-      current: true,
-      online: true
-    });
-  }
-
   return devices;
 }
 
@@ -2014,6 +2000,18 @@ function renderConfigs() {
   const grid = $('#configsGrid');
   const items = (PG.links || []).filter(Boolean);
   grid.innerHTML = '';
+  $('#configCountMeta').textContent = items.length;
+
+  if (items.length === 0) {
+    grid.innerHTML = `
+      <div class="configs-empty">
+        <div class="ic">📭</div>
+        <div class="txt">${I18N[LANG].noConfigs}</div>
+        <div class="hint">${I18N[LANG].noConfigsHint}</div>
+      </div>`;
+    return;
+  }
+
   items.forEach((link, idx) => {
     const { protocol, name } = parseConfig(link);
     const card = document.createElement('div');
@@ -2217,6 +2215,56 @@ renderOSRail();
 renderApps();
 renderConfigs();
 renderSupport();
+
+// If the panel didn't include `user.links` in the HTML render
+// (PasarGuard/Marzban often hold raw configs back from browsers and
+// only return them when a VPN client UA requests the sub URL), try to
+// fetch the raw configs directly from the subscription URL.
+if (PG.links.length === 0 && PG.subscription_url) {
+  fetchRawConfigs(PG.subscription_url).then(links => {
+    if (links.length) {
+      PG.links = links;
+      renderConfigs();
+    }
+  });
+}
+
+async function fetchRawConfigs(subUrl) {
+  // Try the common Marzban/PasarGuard endpoints for raw configs. The
+  // /v2ray suffix is the most widely supported; ?format=v2ray is a
+  // fallback for older or differently-configured panels.
+  const base = subUrl.replace(/\/+$/, '');
+  const candidates = [
+    base + '/v2ray',
+    base + (base.includes('?') ? '&' : '?') + 'format=v2ray',
+  ];
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, { headers: { 'Accept': 'text/plain, */*' }, cache: 'no-store' });
+      if (!res.ok) continue;
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (ct.includes('html')) continue; // panel served the page back
+      const text = (await res.text()).trim();
+      if (!text) continue;
+      const links = decodeConfigList(text);
+      if (links.length) return links;
+    } catch (e) { /* try next candidate */ }
+  }
+  return [];
+}
+
+function decodeConfigList(text) {
+  const protoRe = /^(vless|vmess|trojan|ss|hysteria|hy2|wireguard|wg|tuic):\/\//i;
+  // Most panels return a base64 blob of newline-separated configs.
+  if (/^[A-Za-z0-9+/=\s]+$/.test(text)) {
+    try {
+      const decoded = atob(text.replace(/\s/g, ''));
+      const lines = decoded.split('\n').map(l => l.trim()).filter(l => protoRe.test(l));
+      if (lines.length) return lines;
+    } catch (e) { /* fall through to plain-text path */ }
+  }
+  return text.split('\n').map(l => l.trim()).filter(l => protoRe.test(l));
+}
 </script>
 
 </body>
