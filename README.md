@@ -137,6 +137,18 @@ marzneshin restart
 
 After updating, open any subscription link with **Ctrl+F5** (or clear your browser cache) so the browser picks up the new file instead of serving the old one from cache.
 
+### Uninstall
+
+To fully revert the install — stop and remove the bridge service, delete `/opt/subforme-bridge`, remove the installed `index.html`, and strip the three lines we added to the panel's `.env`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mmaddeveloper/subforme/main/uninstall.sh | sudo bash
+```
+
+Add `--yes` to skip the confirm prompt, `--keep-template` / `--keep-env` for a partial cleanup, or `--panel marzban` / `--panel marzneshin` for the other panels. The uninstaller is idempotent — re-running it on an already-clean system is safe.
+
+You'll still need to remove the `location /sub-online/` block from your nginx config manually (the uninstaller prints it as a reminder).
+
 ## Customization
 
 Everything is configured at the top of the `<script>` block in `index.html`.
@@ -310,6 +322,24 @@ marzneshin restart
 ```
 
 بعد از آپدیت، یکی از صفحه‌های اشتراک رو با **Ctrl+F5** (یا با پاک کردن کش مرورگر) باز کن تا مرورگر نسخه‌ی جدید رو بگیره و نسخه‌ی قدیمی توی کش رو نشون نده.
+
+### حذف کامل (Uninstall)
+
+برای حذف کامل و برگردوندن سرور به حالت اول — توقف سرویس پل، حذف `/opt/subforme-bridge`، پاک کردن `index.html` نصب‌شده، و برداشتن ۳ خطی که توی `.env` پنل اضافه شده بود:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mmaddeveloper/subforme/main/uninstall.sh | sudo bash
+```
+
+فلگ‌های اختیاری:
+- `--yes` — بدون پرسیدن «تأیید می‌کنی؟»
+- `--keep-template` — `index.html` دست نخوره
+- `--keep-env` — `.env` پنل دست نخوره
+- `--panel marzban` یا `--panel marzneshin` — برای پنل‌های دیگه
+
+اسکریپت idempotent‌ـه — اگه دوباره روی سرور تمیز اجراش کنی، خطایی نمی‌ده.
+
+تنها قدم دستی: بلوک `location /sub-online/` رو از کانفیگ nginx پاکش کنی (خود uninstaller متنش رو یادآوری می‌کنه).
 
 ### شخصی‌سازی
 لینک‌های پشتیبانی، تم پیش‌فرض و سایر تنظیمات در ابتدای بخش `<script>` فایل `index.html` قابل تغییرند. برای جزئیات بیشتر بخش انگلیسی بالا را ببینید.
