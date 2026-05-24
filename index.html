@@ -2311,6 +2311,27 @@ function renderConfigs() {
    USAGE STATS — fetches /sub/{token}/usage and renders a bar chart
    ========================================================= */
 let CURRENT_USAGE_PERIOD = 'day';
+// Display all usage timestamps in Iran time regardless of the visitor's
+// browser/OS timezone. Iran is on a fixed UTC+03:30 offset (DST abolished
+// in 2022) — Asia/Tehran captures that without us needing to hard-code it.
+const DISPLAY_TZ = 'Asia/Tehran';
+
+// Return the Date that represents the start of *today* in DISPLAY_TZ.
+// JS Date stores UTC instants, so we read y/m/d via Intl in the target
+// zone and reassemble using an ISO string with the +03:30 offset.
+function tehranStartOfToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: DISPLAY_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const get = (t) => parts.find(p => p.type === t).value;
+  return new Date(`${get('year')}-${get('month')}-${get('day')}T00:00:00+03:30`);
+}
+
+function tehranDaysAgo(n) {
+  const d = tehranStartOfToday();
+  d.setUTCDate(d.getUTCDate() - n);
+  return d;
+}
 
 async function fetchUsage(period) {
   // PasarGuard's usage endpoint accepts ISO start/end and a granularity.
@@ -2318,13 +2339,13 @@ async function fetchUsage(period) {
   const now = new Date();
   let start, queryPeriod;
   if (period === 'day') {
-    start = new Date(now); start.setHours(0, 0, 0, 0);
+    start = tehranStartOfToday();
     queryPeriod = 'hour';
   } else if (period === 'week') {
-    start = new Date(now); start.setDate(now.getDate() - 6); start.setHours(0, 0, 0, 0);
+    start = tehranDaysAgo(6);
     queryPeriod = 'day';
   } else { // month
-    start = new Date(now); start.setDate(now.getDate() - 29); start.setHours(0, 0, 0, 0);
+    start = tehranDaysAgo(29);
     queryPeriod = 'day';
   }
   // Subscription URL might already carry a query string or fragment — strip
@@ -2359,19 +2380,19 @@ function aggregateUsageByBucket(stats) {
 
 function fmtBucketLabel(date, period, full) {
   const locale = LANG === 'fa' ? 'fa-IR' : 'en-US';
+  const tz = { timeZone: DISPLAY_TZ };
   if (period === 'day') {
-    return full
-      ? date.toLocaleString(locale, { hour: '2-digit', minute: '2-digit' })
-      : date.getHours().toString().padStart(2, '0');
+    if (full) return date.toLocaleString(locale, { ...tz, hour: '2-digit', minute: '2-digit', hour12: false });
+    // Short hour label, always 2 digits, in Tehran time, en digits so it stays
+    // narrow enough to fit between bars.
+    return new Intl.DateTimeFormat('en-US', { ...tz, hour: '2-digit', hour12: false }).format(date);
   }
   if (period === 'week') {
-    return full
-      ? date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })
-      : date.toLocaleDateString(locale, { weekday: 'narrow' });
+    if (full) return date.toLocaleDateString(locale, { ...tz, weekday: 'short', day: 'numeric', month: 'short' });
+    return date.toLocaleDateString(locale, { ...tz, weekday: 'narrow' });
   }
-  return full
-    ? date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
-    : date.getDate().toString();
+  if (full) return date.toLocaleDateString(locale, { ...tz, day: 'numeric', month: 'short' });
+  return new Intl.DateTimeFormat('en-US', { ...tz, day: 'numeric' }).format(date);
 }
 
 function renderUsageChart(data, period) {
