@@ -662,6 +662,58 @@ body::before {
 .devices-empty .txt, .configs-empty .txt { font-size: 13px; }
 .devices-empty .hint, .configs-empty .hint { font-family: var(--mono); font-size: 10px; color: var(--ink-4); margin-top: 6px; letter-spacing: 0.04em; }
 
+/* =========================================================
+   USAGE STATS (chart section)
+   ========================================================= */
+.usage-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+.usage-tab {
+  font-family: var(--mono); font-size: 9px;
+  padding: 7px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink-3);
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  transition: all 0.15s;
+}
+.usage-tab:hover { color: var(--ink); border-color: var(--line-2); }
+.usage-tab.active { background: var(--accent); color: #000; border-color: var(--accent); }
+.usage-summary {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-bottom: 10px;
+  padding: 0 2px;
+}
+.usage-total { font-family: var(--serif); white-space: nowrap; }
+.usage-total .num { font-size: 26px; font-weight: 700; }
+.usage-total .unit { font-size: 12px; color: var(--ink-3); font-family: var(--mono); letter-spacing: 0.08em; margin-inline-start: 4px; }
+.usage-period-label { font-family: var(--mono); font-size: 9px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.usage-chart-wrap {
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  height: 120px;
+  position: relative;
+}
+.usage-chart { width: 100%; height: 100%; display: block; overflow: visible; }
+.usage-chart .bar { fill: var(--accent); opacity: 0.55; transition: opacity 0.15s; cursor: pointer; }
+.usage-chart .bar:hover { opacity: 1; }
+.usage-chart .axis-label {
+  font-family: var(--mono);
+  font-size: 6px;
+  fill: var(--ink-4);
+  letter-spacing: 0.04em;
+}
+.usage-empty {
+  display: flex; align-items: center; justify-content: center;
+  height: 100%;
+  font-family: var(--mono); font-size: 10px;
+  color: var(--ink-3);
+  letter-spacing: 0.06em;
+}
+
 .devices-note {
   margin-top: 10px;
   padding: 10px 14px;
@@ -1229,11 +1281,32 @@ body::before {
     </div>
   </section>
 
+  <!-- USAGE STATS -->
+  <section class="section" id="usageSection">
+    <div class="sec-head">
+      <h2><span data-i18n="usage">Usage</span> <span class="accent" data-i18n="usageAccent">Stats</span></h2>
+      <span class="meta">02</span>
+    </div>
+    <div class="usage-tabs" id="usageTabs">
+      <button type="button" class="usage-tab active" data-period="day" data-i18n="usageDaily">Today</button>
+      <button type="button" class="usage-tab" data-period="week" data-i18n="usageWeekly">Week</button>
+      <button type="button" class="usage-tab" data-period="month" data-i18n="usageMonthly">Month</button>
+    </div>
+    <div class="usage-summary">
+      <div class="usage-total">
+        <span class="num" id="usageTotalValue">—</span>
+        <span class="unit" id="usageTotalUnit"></span>
+      </div>
+      <div class="usage-period-label" id="usagePeriodLabel">—</div>
+    </div>
+    <div class="usage-chart-wrap" id="usageChartWrap"></div>
+  </section>
+
   <!-- APPS -->
   <section class="section">
     <div class="sec-head">
       <h2><span data-i18n="getThe">Get the</span> <span class="accent" data-i18n="appAccent">App</span></h2>
-      <span class="meta">02</span>
+      <span class="meta">03</span>
     </div>
     <div class="os-rail" id="osRail"></div>
     <div class="app-grid" id="appsGrid"></div>
@@ -1243,7 +1316,7 @@ body::before {
   <section class="section">
     <div class="sec-head">
       <h2><span data-i18n="servers">Servers</span></h2>
-      <span class="meta">03 · <span id="configCountMeta">0</span></span>
+      <span class="meta">04 · <span id="configCountMeta">0</span></span>
     </div>
     <div class="configs-grid" id="configsGrid"></div>
   </section>
@@ -1252,7 +1325,7 @@ body::before {
   <section class="section">
     <div class="sec-head">
       <h2><span data-i18n="needAccent">Need</span> <span class="accent" data-i18n="helpAccent">Help?</span></h2>
-      <span class="meta">04</span>
+      <span class="meta">05</span>
     </div>
     <div class="support-grid" id="supportGrid"></div>
   </section>
@@ -1402,6 +1475,15 @@ const I18N = {
     noIp: "بدون آی‌پی",
     activeConn: "اتصال فعال",
     activeConns: "اتصال فعال",
+    usage: "آمار",
+    usageAccent: "مصرف",
+    usageDaily: "امروز",
+    usageWeekly: "هفته",
+    usageMonthly: "ماه",
+    usagePeriod_day: "۲۴ ساعت گذشته",
+    usagePeriod_week: "۷ روز گذشته",
+    usagePeriod_month: "۳۰ روز گذشته",
+    noUsageYet: "هنوز مصرفی ثبت نشده",
     noDevices: "هنوز آی‌پی فعالی نیست",
     noDevicesHint: "اشتراکت رو توی یه اپ اضافه کن تا آی‌پی‌ها اینجا نشون داده بشن",
     noConfigs: "هنوز کانفیگی برای نمایش نیست",
@@ -1441,6 +1523,15 @@ const I18N = {
     noIp: "no IP",
     activeConn: "active connection",
     activeConns: "active connections",
+    usage: "Usage",
+    usageAccent: "Stats",
+    usageDaily: "Today",
+    usageWeekly: "Week",
+    usageMonthly: "Month",
+    usagePeriod_day: "last 24 hours",
+    usagePeriod_week: "last 7 days",
+    usagePeriod_month: "last 30 days",
+    noUsageYet: "no usage recorded yet",
     noDevices: "No active IPs yet",
     noDevicesHint: "Import this subscription in an app — IPs will appear here",
     noConfigs: "No configurations to show yet",
@@ -2089,6 +2180,127 @@ function renderConfigs() {
   };
 }
 
+/* =========================================================
+   USAGE STATS — fetches /sub/{token}/usage and renders a bar chart
+   ========================================================= */
+let CURRENT_USAGE_PERIOD = 'day';
+
+async function fetchUsage(period) {
+  // PasarGuard's usage endpoint accepts ISO start/end and a granularity.
+  // We pick the granularity to keep the chart readable for each tab.
+  const now = new Date();
+  let start, queryPeriod;
+  if (period === 'day') {
+    start = new Date(now); start.setHours(0, 0, 0, 0);
+    queryPeriod = 'hour';
+  } else if (period === 'week') {
+    start = new Date(now); start.setDate(now.getDate() - 6); start.setHours(0, 0, 0, 0);
+    queryPeriod = 'day';
+  } else { // month
+    start = new Date(now); start.setDate(now.getDate() - 29); start.setHours(0, 0, 0, 0);
+    queryPeriod = 'day';
+  }
+  // Subscription URL might already carry a query string or fragment — strip
+  // both before appending /usage so we don't produce /sub/abc?x=1/usage
+  const u = new URL(PG.subscription_url, window.location.href);
+  const base = u.origin + u.pathname.replace(/\/+$/, '');
+  const url = `${base}/usage?period=${queryPeriod}&start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(now.toISOString())}`;
+  try {
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' }, cache: 'no-store' });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) {
+    return null;
+  }
+}
+
+function aggregateUsageByBucket(stats) {
+  // PasarGuard returns `stats: { <node_id>: [{ period_start, total_traffic }] }`.
+  // Sum across nodes per bucket so the chart shows one bar per time period.
+  const buckets = new Map();
+  for (const list of Object.values(stats || {})) {
+    for (const s of list || []) {
+      const key = s.period_start;
+      if (!key) continue;
+      buckets.set(key, (buckets.get(key) || 0) + (s.total_traffic || 0));
+    }
+  }
+  return Array.from(buckets.entries())
+    .map(([t, v]) => ({ t: new Date(t), v }))
+    .sort((a, b) => a.t - b.t);
+}
+
+function fmtBucketLabel(date, period, full) {
+  const locale = LANG === 'fa' ? 'fa-IR' : 'en-US';
+  if (period === 'day') {
+    return full
+      ? date.toLocaleString(locale, { hour: '2-digit', minute: '2-digit' })
+      : date.getHours().toString().padStart(2, '0');
+  }
+  return full
+    ? date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
+    : date.getDate().toString();
+}
+
+function renderUsageChart(data, period) {
+  const wrap = $('#usageChartWrap');
+  if (!data || data.length === 0) {
+    wrap.innerHTML = `<div class="usage-empty">${escapeHtml(I18N[LANG].noUsageYet)}</div>`;
+    return;
+  }
+  const max = Math.max(...data.map(d => d.v), 1);
+  const n = data.length;
+  const barW = 100 / n;
+  let svg = '<svg viewBox="0 0 100 50" preserveAspectRatio="none" class="usage-chart">';
+  for (let i = 0; i < n; i++) {
+    const d = data[i];
+    const h = max > 0 ? (d.v / max) * 42 : 0;
+    const y = 48 - h;
+    const x = i * barW + barW * 0.1;
+    const w = barW * 0.8;
+    const tip = `${fmtBucketLabel(d.t, period, true)} — ${fmtBytes(d.v).value}${fmtBytes(d.v).unit}`;
+    svg += `<rect class="bar" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(h, 0.4).toFixed(2)}" rx="0.3"><title>${escapeHtml(tip)}</title></rect>`;
+  }
+  // Add 3-5 axis labels evenly spaced
+  const labelCount = period === 'day' ? 5 : 3;
+  for (let k = 0; k < labelCount; k++) {
+    const i = Math.round(k * (n - 1) / (labelCount - 1));
+    const x = i * barW + barW / 2;
+    svg += `<text class="axis-label" x="${x.toFixed(2)}" y="50" text-anchor="middle">${escapeHtml(fmtBucketLabel(data[i].t, period))}</text>`;
+  }
+  svg += '</svg>';
+  wrap.innerHTML = svg;
+}
+
+async function renderUsageStats() {
+  $('#usagePeriodLabel').textContent = I18N[LANG]['usagePeriod_' + CURRENT_USAGE_PERIOD];
+  const data = await fetchUsage(CURRENT_USAGE_PERIOD);
+  if (!data) {
+    renderUsageChart([], CURRENT_USAGE_PERIOD);
+    $('#usageTotalValue').textContent = '—';
+    $('#usageTotalUnit').textContent = '';
+    return;
+  }
+  const aggregated = aggregateUsageByBucket(data.stats);
+  const total = aggregated.reduce((s, d) => s + d.v, 0);
+  const f = fmtBytes(total);
+  $('#usageTotalValue').textContent = f.value;
+  $('#usageTotalUnit').textContent = f.unit;
+  renderUsageChart(aggregated, CURRENT_USAGE_PERIOD);
+}
+
+function initUsageStatsTabs() {
+  document.querySelectorAll('.usage-tab').forEach(btn => {
+    btn.onclick = () => {
+      if (btn.classList.contains('active')) return;
+      CURRENT_USAGE_PERIOD = btn.dataset.period;
+      document.querySelectorAll('.usage-tab').forEach(b =>
+        b.classList.toggle('active', b === btn));
+      renderUsageStats();
+    };
+  });
+}
+
 function renderSupport() {
   const grid = $('#supportGrid');
   grid.innerHTML = '';
@@ -2217,6 +2429,7 @@ $('#langBtn').onclick = () => {
   renderSupport();
   renderSmartAlert();
   renderThemes();
+  renderUsageStats();
 };
 
 $('#themeBtn').onclick = () => {
@@ -2250,6 +2463,8 @@ renderOSRail();
 renderApps();
 renderConfigs();
 renderSupport();
+initUsageStatsTabs();
+renderUsageStats();
 
 // If the panel didn't include `user.links` in the HTML render
 // (PasarGuard/Marzban often hold raw configs back from browsers and
