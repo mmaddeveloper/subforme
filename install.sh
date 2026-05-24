@@ -44,14 +44,24 @@ REPO_RAW="https://raw.githubusercontent.com/mmaddeveloper/subforme/main"
 RELEASE_LATEST="https://github.com/mmaddeveloper/subforme/releases/latest/download"
 
 # -------------------- args --------------------
+# Helper for flags that take a required value. Guards against:
+#   1. running off the end of $@ (no second arg) — would crash under `set -u`
+#   2. swallowing the next flag as a value (`--admin --pass foo` would
+#      otherwise leave ADMIN_USER='--pass')
+_take_arg() {
+    if [ $# -lt 2 ] || [ "${2:0:2}" = "--" ]; then
+        echo "✗ $1 requires a value" >&2; exit 1
+    fi
+    printf '%s' "$2"
+}
 while [ $# -gt 0 ]; do
     case "$1" in
         --no-bridge)    INSTALL_BRIDGE=false; shift ;;
-        --panel)        PANEL="$2"; shift 2 ;;
-        --panel-url)    PANEL_URL="$2"; shift 2 ;;
-        --admin)        ADMIN_USER="$2"; shift 2 ;;
-        --pass)         ADMIN_PASS="$2"; shift 2 ;;
-        --bridge-port)  BRIDGE_PORT="$2"; shift 2 ;;
+        --panel)        PANEL=$(_take_arg "$@"); shift 2 ;;
+        --panel-url)    PANEL_URL=$(_take_arg "$@"); shift 2 ;;
+        --admin)        ADMIN_USER=$(_take_arg "$@"); shift 2 ;;
+        --pass)         ADMIN_PASS=$(_take_arg "$@"); shift 2 ;;
+        --bridge-port)  BRIDGE_PORT=$(_take_arg "$@"); shift 2 ;;
         -h|--help)
             cat <<'HELP'
 Plus Collection installer — PasarGuard / Marzban / Marzneshin
@@ -93,7 +103,17 @@ PANEL_SSL_KEY=""
 PANEL_HOSTNAME=""
 PANEL_DIRECT_TLS=false
 if [ -f "$ENV_FILE" ]; then
-    _strip() { sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" "$ENV_FILE" | head -1 | sed 's/^"//;s/"$//' | tr -d "'"; }
+    # Pull a key's value out of the panel's .env. Handles:
+    #   - optional whitespace around '='
+    #   - matched outer single or double quotes (only strip them when paired)
+    #   - trailing whitespace + CR (Windows line endings)
+    # We deliberately do NOT do a blanket `tr -d` on quotes — a hostname like
+    # `O'Brien` shouldn't lose its apostrophe.
+    _strip() {
+        sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" "$ENV_FILE" \
+            | head -1 \
+            | sed -E 's/[[:space:]]+$//; s/\r$//; s/^"([^"]*)"$/\1/; s/^'\''([^'\'']*)'\''$/\1/'
+    }
     PANEL_UVICORN_HOST=$(_strip UVICORN_HOST)
     PANEL_UVICORN_PORT=$(_strip UVICORN_PORT)
     PANEL_SSL_CERT=$(_strip UVICORN_SSL_CERTFILE)
@@ -131,7 +151,20 @@ if [ "$PANEL_DIRECT_TLS" = "true" ] && [ -n "$PANEL_SSL_KEY" ] && [ -f "$PANEL_S
     BRIDGE_BIND="0.0.0.0"
     [ "$BRIDGE_PORT" = "8787" ] && BRIDGE_PORT="8443"
     ENDPOINT_URL="https://$PANEL_HOSTNAME:$BRIDGE_PORT/api/sub/online/{token}"
-    ALLOWED_ORIGIN_VAL="https://$PANEL_HOSTNAME:$PANEL_UVICORN_PORT"
+    # Only set Origin when we actually have a port to attach to it —
+    # `https://host:` would be a malformed origin and break every CORS check.
+    if [ -n "$PANEL_UVICORN_PORT" ]; then
+        ALLOWED_ORIGIN_VAL="https://$PANEL_HOSTNAME:$PANEL_UVICORN_PORT"
+    else
+        ALLOWED_ORIGIN_VAL="https://$PANEL_HOSTNAME"
+    fi
+elif [ "$PANEL_DIRECT_TLS" = "true" ]; then
+    # Direct TLS detected but we couldn't piece together the hostname (cert
+    # path didn't match the standard layout and openssl wasn't available).
+    # Warn loudly — falling back to nginx-mode would silently 404 every
+    # /sub-online/ request.
+    echo "    ⚠ direct-TLS panel detected but couldn't extract hostname from $PANEL_SSL_CERT" >&2
+    echo "    ⚠ install openssl or rename the cert dir to .../certs/<host>/fullchain.pem then re-run" >&2
 else
     ENDPOINT_URL="/sub-online/{token}"
     ALLOWED_ORIGIN_VAL=""
@@ -204,7 +237,7 @@ echo "    ✓ template downloaded"
 
 # -------------------- 2) panel .env --------------------
 touch "$ENV_FILE"
-if grep -q '^CUSTOM_TEMPLATES_DIRECTORY' "$ENV_FILE"; then
+if grep -qE '^CUSTOM_TEMPLATES_DIRECTORY[[:space:]]*=' "$ENV_FILE"; then
     EXISTING_DIR=$(sed -n 's/^CUSTOM_TEMPLATES_DIRECTORY=//p' "$ENV_FILE" | head -1 | sed 's/^"//;s/"$//')
     if [ "$EXISTING_DIR" != "$TEMPLATE_BASE" ]; then
         echo "    ⚠ CUSTOM_TEMPLATES_DIRECTORY is already $EXISTING_DIR — leaving it. If the panel doesn't pick up the new template, change it to $TEMPLATE_BASE manually" >&2
@@ -212,7 +245,7 @@ if grep -q '^CUSTOM_TEMPLATES_DIRECTORY' "$ENV_FILE"; then
 else
     echo "CUSTOM_TEMPLATES_DIRECTORY=\"$TEMPLATE_BASE\"" >> "$ENV_FILE"
 fi
-grep -q '^SUBSCRIPTION_PAGE_TEMPLATE' "$ENV_FILE" || echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "$ENV_FILE"
+grep -qE '^SUBSCRIPTION_PAGE_TEMPLATE[[:space:]]*=' "$ENV_FILE" || echo 'SUBSCRIPTION_PAGE_TEMPLATE="subscription/index.html"' >> "$ENV_FILE"
 # When the panel sits behind nginx (which is how it's typically deployed,
 # and how the bridge is exposed via /sub-online/ too), uvicorn's default
 # ProxyHeaders=False makes request.client.host the loopback peer (127.0.0.1)
@@ -220,7 +253,7 @@ grep -q '^SUBSCRIPTION_PAGE_TEMPLATE' "$ENV_FILE" || echo 'SUBSCRIPTION_PAGE_TEM
 # for everyone, and the "Connected IPs" section becomes useless. Turn on
 # X-Forwarded-For trust. Default forwarded_allow_ips already restricts this
 # to 127.0.0.1, which is correct for nginx-on-same-host setups.
-grep -q '^UVICORN_PROXY_HEADERS' "$ENV_FILE" || echo 'UVICORN_PROXY_HEADERS=true' >> "$ENV_FILE"
+grep -qE '^UVICORN_PROXY_HEADERS[[:space:]]*=' "$ENV_FILE" || echo 'UVICORN_PROXY_HEADERS=true' >> "$ENV_FILE"
 echo "    ✓ panel .env configured (incl. UVICORN_PROXY_HEADERS=true for real client IPs)"
 
 # -------------------- 3) bridge --------------------
@@ -350,13 +383,21 @@ EOF
     fi
 
     if [ "$BRIDGE_TLS" = "true" ]; then
-        # Bridge listens publicly with TLS; open the firewall best-effort
-        if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+        # Bridge listens publicly with TLS; open the firewall best-effort.
+        # Order: firewalld (Fedora/RHEL) -> ufw (Debian/Ubuntu) -> raw iptables.
+        if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+            firewall-cmd --permanent --add-port="$BRIDGE_PORT"/tcp >/dev/null 2>&1 \
+                && firewall-cmd --reload >/dev/null 2>&1 \
+                && echo "    ✓ firewalld: $BRIDGE_PORT/tcp opened (permanent)"
+        elif command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
             ufw allow "$BRIDGE_PORT"/tcp >/dev/null 2>&1 && echo "    ✓ ufw: $BRIDGE_PORT/tcp opened"
         elif command -v iptables >/dev/null 2>&1; then
-            iptables -C INPUT -p tcp --dport "$BRIDGE_PORT" -j ACCEPT 2>/dev/null \
-                || iptables -A INPUT -p tcp --dport "$BRIDGE_PORT" -j ACCEPT 2>/dev/null \
-                && echo "    ✓ iptables: $BRIDGE_PORT/tcp ACCEPT rule ensured"
+            if ! iptables -C INPUT -p tcp --dport "$BRIDGE_PORT" -j ACCEPT 2>/dev/null; then
+                iptables -A INPUT -p tcp --dport "$BRIDGE_PORT" -j ACCEPT 2>/dev/null \
+                    && echo "    ✓ iptables: $BRIDGE_PORT/tcp ACCEPT rule added (note: not persisted across reboot)"
+            else
+                echo "    ✓ iptables: $BRIDGE_PORT/tcp already allowed"
+            fi
         fi
         cat <<NOTE
 

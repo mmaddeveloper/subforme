@@ -53,6 +53,9 @@ try:
 except ValueError as _e:
     sys.stderr.write(f"[bridge] invalid numeric env var: {_e}\n")
     sys.exit(2)
+# Clamp MAX_DEVICES — a typo like 1000000 would balloon the response and
+# overload the panel. 50 is well above any realistic per-user IP count.
+MAX_DEVICES = max(1, min(MAX_DEVICES, 50))
 BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")
 TLS_CERT_FILE = os.environ.get("TLS_CERT_FILE", "").strip() or None
 TLS_KEY_FILE = os.environ.get("TLS_KEY_FILE", "").strip() or None
@@ -86,12 +89,21 @@ def _http(method: str, url: str, data=None, headers=None, timeout: int = 10):
         return e.code, body
 
 
-def get_admin_jwt(force_refresh: bool = False) -> str:
+def get_admin_jwt(force_refresh: bool = False, stale_jwt: str | None = None) -> str:
     """Single-flight admin JWT refresh. The lock prevents two threads from
-    both POSTing to /api/admin/token under contention."""
+    both POSTing to /api/admin/token under contention. When `force_refresh`
+    is set, the caller can also pass the JWT it saw as `stale_jwt`; if some
+    other thread has already replaced it inside the lock, we skip the POST
+    and return the fresh one — that prevents a thundering-herd of /token
+    requests when many users hit the bridge after a panel restart.
+    """
     global _jwt, _jwt_exp
     with _jwt_lock:
-        if not force_refresh and _jwt and time.time() < _jwt_exp:
+        now = time.monotonic()
+        if not force_refresh and _jwt and now < _jwt_exp:
+            return _jwt
+        # Force-refresh, but another thread already refreshed under us — use that.
+        if force_refresh and stale_jwt and _jwt and _jwt != stale_jwt and now < _jwt_exp:
             return _jwt
         body = urllib.parse.urlencode({"username": ADMIN_USER, "password": ADMIN_PASS}).encode()
         status, payload = _http(
@@ -101,13 +113,19 @@ def get_admin_jwt(force_refresh: bool = False) -> str:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         if status != 200:
-            raise RuntimeError(f"admin auth failed: {status} {payload[:200]!r}")
-        token = json.loads(payload).get("access_token")
+            # Don't echo the response body — it may include the form payload
+            # (and therefore the password) in some panel error formats.
+            raise RuntimeError(f"admin auth failed with status {status}")
+        try:
+            token = json.loads(payload).get("access_token")
+        except Exception:
+            raise RuntimeError("admin auth response wasn't valid JSON")
         if not token:
             raise RuntimeError("admin auth response had no access_token")
         _jwt = token
-        # Keep a generous safety margin under the panel's 1h default
-        _jwt_exp = time.time() + 50 * 60
+        # Keep a generous safety margin under the panel's 1h default.
+        # time.monotonic() so a wall-clock step doesn't keep a stale JWT alive.
+        _jwt_exp = time.monotonic() + 50 * 60
         return _jwt
 
 
@@ -116,7 +134,9 @@ def _cache_get(token: str):
         hit = _cache.get(token)
         if hit is None:
             return None
-        if time.time() - hit[0] >= CACHE_SECONDS:
+        # Use monotonic clock for TTL math so an NTP step (forward OR backward)
+        # doesn't leave stale entries cached or expire fresh ones too early.
+        if time.monotonic() - hit[0] >= CACHE_SECONDS:
             _cache.pop(token, None)
             return None
         _cache.move_to_end(token)  # LRU bump
@@ -125,7 +145,7 @@ def _cache_get(token: str):
 
 def _cache_put(token: str, devices: list):
     with _cache_lock:
-        _cache[token] = (time.time(), devices)
+        _cache[token] = (time.monotonic(), devices)
         _cache.move_to_end(token)
         while len(_cache) > CACHE_MAX:
             _cache.popitem(last=False)  # evict oldest
@@ -151,8 +171,13 @@ def get_devices(token: str):
     except Exception as e:
         print(f"[bridge] info JSON parse failed for …{tail}: {e}", file=sys.stderr)
         return []
+    # Defensive: a misrouted 200 (auth proxy login page, broken nginx) can
+    # leave us with a non-dict JSON body. Treat anything else as "no username".
+    if not isinstance(info, dict):
+        print(f"[bridge] /info response for …{tail} wasn't a JSON object", file=sys.stderr)
+        return []
     username = info.get("username")
-    if not username:
+    if not username or not isinstance(username, str):
         print(f"[bridge] no username in /info response for …{tail}", file=sys.stderr)
         return []
 
@@ -168,9 +193,13 @@ def get_devices(token: str):
     quoted_user = urllib.parse.quote(username, safe="")
     url = f"{PANEL_URL}/api/node/online_stats/{quoted_user}/ip"
     status, payload = 0, b""
+    jwt = None
     for attempt in range(2):
         try:
-            jwt = get_admin_jwt(force_refresh=(attempt == 1))
+            # On the second pass, pass the stale JWT so the refresher can
+            # short-circuit if some other thread already grabbed a fresh one
+            # — keeps a thundering herd from all POSTing /api/admin/token.
+            jwt = get_admin_jwt(force_refresh=(attempt == 1), stale_jwt=(jwt if attempt == 1 else None))
         except Exception as e:
             print(f"[bridge] admin auth failed: {e}", file=sys.stderr)
             return []
@@ -287,12 +316,17 @@ class Handler(BaseHTTPRequestHandler):
         prefix = "/api/sub/online/"
         if not path.startswith(prefix):
             return self._json(404, {"error": "not found"})
-        token = path[len(prefix):].strip("/")
+        # Percent-decode any escapes the browser left in the path before
+        # validation. Without this, `/api/sub/online/%2F..` slips past the
+        # "no slash" check, gets re-encoded to `%252F..` by quote(safe="")
+        # in step 1, and the panel sees a token nobody issued.
+        token = urllib.parse.unquote(path[len(prefix):]).strip("/")
         if not token:
             return self._json(400, {"error": "missing token"})
-        # The token comes from the URL path; reject anything that obviously
-        # isn't a token (control chars, slashes, very long strings).
-        if len(token) > 256 or any(c in token for c in "/\\\x00"):
+        # Reject anything that obviously isn't a panel-issued token: very
+        # long strings, slashes (path traversal), backslashes, and ANY ASCII
+        # control character (NUL through 0x1F).
+        if len(token) > 256 or any(c in token for c in "/\\") or any(ord(c) < 0x20 for c in token):
             return self._json(400, {"error": "invalid token"})
         try:
             return self._json(200, get_devices(token))
