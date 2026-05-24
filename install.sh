@@ -10,6 +10,10 @@
 
 set -euo pipefail
 
+# When piped via `curl | bash`, stdin is the script — `read` would consume
+# script bytes instead of typed input. Re-attach stdin to the real terminal.
+if [ ! -t 0 ] && [ -r /dev/tty ]; then exec 0</dev/tty; fi
+
 # -------------------- defaults --------------------
 PANEL="${PANEL:-pasarguard}"
 PANEL_URL="${PANEL_URL:-http://127.0.0.1:8000}"
@@ -31,7 +35,7 @@ while [ $# -gt 0 ]; do
         --pass)         ADMIN_PASS="$2"; shift 2 ;;
         --bridge-port)  BRIDGE_PORT="$2"; shift 2 ;;
         -h|--help)
-            sed -n '2,8p' "$0"; exit 0 ;;
+            sed -n '2,9p' "$0"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 1 ;;
     esac
 done
@@ -55,9 +59,26 @@ echo "    panel env:  $ENV_FILE"
 echo "    bridge:     $([ "$INSTALL_BRIDGE" = true ] && echo "yes (port $BRIDGE_PORT)" || echo "no")"
 echo
 
+# Download helper — uses curl if available (the same binary that piped this
+# script), else falls back to wget. Downloads to a temp path then moves into
+# place so a sed-patched destination doesn't fool `wget -N` on re-runs.
+download() {
+    local url="$1" out="$2" tmp
+    tmp="$(mktemp)"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL --retry 2 "$url" -o "$tmp" || { rm -f "$tmp"; return 1; }
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "$tmp" "$url" || { rm -f "$tmp"; return 1; }
+    else
+        echo "✗ need curl or wget" >&2; rm -f "$tmp"; return 1
+    fi
+    [ -s "$tmp" ] || { echo "✗ downloaded $url is empty" >&2; rm -f "$tmp"; return 1; }
+    mv "$tmp" "$out"
+}
+
 # -------------------- 1) template --------------------
 mkdir -p "$TEMPLATE_DIR"
-wget -qN -P "$TEMPLATE_DIR" "$RELEASE_LATEST/index.html"
+download "$RELEASE_LATEST/index.html" "$TEMPLATE_DIR/index.html"
 echo "    ✓ template downloaded"
 
 # -------------------- 2) panel .env --------------------
@@ -75,10 +96,9 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
     # Reuse credentials from a prior install so re-running the script is
     # silent (true update). Flags (--admin / --pass) still override.
     if [ -f "$BRIDGE_DIR/.env" ]; then
-        # shellcheck disable=SC1091
-        OLD_USER=$(grep -E '^PG_ADMIN_USER=' "$BRIDGE_DIR/.env" | cut -d= -f2-)
-        OLD_PASS=$(grep -E '^PG_ADMIN_PASS=' "$BRIDGE_DIR/.env" | cut -d= -f2-)
-        OLD_PURL=$(grep -E '^PANEL_URL='     "$BRIDGE_DIR/.env" | cut -d= -f2-)
+        OLD_USER=$(sed -n 's/^PG_ADMIN_USER=//p' "$BRIDGE_DIR/.env")
+        OLD_PASS=$(sed -n 's/^PG_ADMIN_PASS=//p' "$BRIDGE_DIR/.env")
+        OLD_PURL=$(sed -n 's/^PANEL_URL=//p'     "$BRIDGE_DIR/.env")
         [ -z "$ADMIN_USER" ] && ADMIN_USER="$OLD_USER"
         [ -z "$ADMIN_PASS" ] && ADMIN_PASS="$OLD_PASS"
         [ "$PANEL_URL" = "http://127.0.0.1:8000" ] && [ -n "$OLD_PURL" ] && PANEL_URL="$OLD_PURL"
@@ -87,18 +107,23 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
 
     if [ -z "$ADMIN_USER" ]; then read -rp "panel admin username: " ADMIN_USER; fi
     if [ -z "$ADMIN_PASS" ]; then read -rsp "panel admin password: " ADMIN_PASS; echo; fi
+    [ -z "$ADMIN_USER" ] && { echo "✗ admin username is required (--admin USER)" >&2; exit 1; }
+    [ -z "$ADMIN_PASS" ] && { echo "✗ admin password is required (--pass PASS)" >&2; exit 1; }
 
     mkdir -p "$BRIDGE_DIR"
-    wget -qO "$BRIDGE_DIR/bridge.py" "$REPO_RAW/bridge/bridge.py"
+    if ! download "$REPO_RAW/bridge/bridge.py" "$BRIDGE_DIR/bridge.py"; then
+        echo "✗ couldn't download bridge.py from github" >&2; exit 1
+    fi
     chmod +x "$BRIDGE_DIR/bridge.py"
 
+    # Write .env with printf so values containing $, `, \, " survive intact
+    # (heredoc would expand them). umask makes the file root-only.
     umask 077
-    cat > "$BRIDGE_DIR/.env" <<EOF
-PANEL_URL=$PANEL_URL
-PG_ADMIN_USER=$ADMIN_USER
-PG_ADMIN_PASS=$ADMIN_PASS
-PORT=$BRIDGE_PORT
-EOF
+    : > "$BRIDGE_DIR/.env"
+    printf 'PANEL_URL=%s\n'     "$PANEL_URL"   >> "$BRIDGE_DIR/.env"
+    printf 'PG_ADMIN_USER=%s\n' "$ADMIN_USER"  >> "$BRIDGE_DIR/.env"
+    printf 'PG_ADMIN_PASS=%s\n' "$ADMIN_PASS"  >> "$BRIDGE_DIR/.env"
+    printf 'PORT=%s\n'          "$BRIDGE_PORT" >> "$BRIDGE_DIR/.env"
     umask 022
 
     cat > /etc/systemd/system/subforme-bridge.service <<EOF
@@ -113,6 +138,19 @@ EnvironmentFile=$BRIDGE_DIR/.env
 ExecStart=/usr/bin/env python3 $BRIDGE_DIR/bridge.py
 Restart=on-failure
 RestartSec=3
+# Hardening — bridge only does outbound HTTP, nothing else
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=$BRIDGE_DIR
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
 
 [Install]
 WantedBy=multi-user.target
@@ -128,7 +166,7 @@ EOF
         echo "    ✗ bridge failed to start — check: journalctl -u subforme-bridge -n 50"
     fi
 
-    # Patch ONLINE_IPS_ENDPOINT in the installed template
+    # Patch ONLINE_IPS_ENDPOINT in the freshly-downloaded template
     if grep -q "const ONLINE_IPS_ENDPOINT = '';" "$TEMPLATE_DIR/index.html"; then
         sed -i.bak "s|const ONLINE_IPS_ENDPOINT = '';|const ONLINE_IPS_ENDPOINT = '/sub-online/{token}';|" "$TEMPLATE_DIR/index.html"
         rm -f "$TEMPLATE_DIR/index.html.bak"

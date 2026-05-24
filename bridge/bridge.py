@@ -58,11 +58,17 @@ def get_admin_jwt():
 
 
 def _to_unix(iso: str) -> int:
+    """Parse PasarGuard's `created_at`. Treats naive timestamps as UTC —
+    .timestamp() on a naive datetime defaults to local time, which would
+    skew "last seen" by the host's tz offset on non-UTC servers."""
     if not iso:
         return 0
     try:
-        from datetime import datetime
-        return int(datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp())
+        from datetime import datetime, timezone
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
     except Exception:
         return 0
 
@@ -73,14 +79,18 @@ def get_devices(token: str):
     if hit and now - hit[0] < CACHE_SECONDS:
         return hit[1]
 
+    tail = token[-6:] if len(token) >= 6 else token  # for logs, never the full token
+
     # Step 1: token -> username (no admin auth needed)
     try:
         _, payload = _http("GET", f"{PANEL_URL}/sub/{urllib.parse.quote(token)}/info")
         info = json.loads(payload)
-    except Exception:
+    except Exception as e:
+        print(f"[bridge] info lookup failed for …{tail}: {e}", file=sys.stderr)
         return []
     username = info.get("username")
     if not username:
+        print(f"[bridge] no username in /info response for …{tail}", file=sys.stderr)
         return []
 
     # Step 2: pull IP + UA history with admin auth
@@ -92,9 +102,11 @@ def get_devices(token: str):
             headers={"Authorization": f"Bearer {jwt}"},
         )
         if status != 200:
+            print(f"[bridge] sub_update for {username} returned {status}", file=sys.stderr)
             return []
         updates = json.loads(payload).get("updates", []) or []
-    except Exception:
+    except Exception as e:
+        print(f"[bridge] sub_update lookup failed for {username}: {e}", file=sys.stderr)
         return []
 
     # Step 3: dedupe by ip+UA, newest-first
