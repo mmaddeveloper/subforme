@@ -1400,6 +1400,8 @@ const I18N = {
     online: "آنلاین", offline: "آفلاین",
     thisDevice: "این آی‌پی",
     noIp: "بدون آی‌پی",
+    activeConn: "اتصال فعال",
+    activeConns: "اتصال فعال",
     noDevices: "هنوز آی‌پی فعالی نیست",
     noDevicesHint: "اشتراکت رو توی یه اپ اضافه کن تا آی‌پی‌ها اینجا نشون داده بشن",
     noConfigs: "هنوز کانفیگی برای نمایش نیست",
@@ -1437,6 +1439,8 @@ const I18N = {
     online: "ONLINE", offline: "OFFLINE",
     thisDevice: "THIS IP",
     noIp: "no IP",
+    activeConn: "active connection",
+    activeConns: "active connections",
     noDevices: "No active IPs yet",
     noDevicesHint: "Import this subscription in an app — IPs will appear here",
     noConfigs: "No configurations to show yet",
@@ -1865,15 +1869,16 @@ async function fetchOnlineDevices() {
     const data = await res.json();
     if (!Array.isArray(data)) return null;
     return data.map(d => {
-      const parsed = parseUserAgent(d.user_agent || '') || { app: 'Unknown', os: 'unknown', icon: 'device' };
+      const parsed = parseUserAgent(d.user_agent || '');
       return {
-        app: parsed.app,
-        os: parsed.os,
-        icon: parsed.icon,
+        app: parsed ? parsed.app : '',
+        os: parsed ? parsed.os : '',
+        icon: parsed ? parsed.icon : 'device',
         ip: d.ip || null,
         lastSeen: d.last_seen || '',
         current: false,
-        online: isRecentlyOnline(d.last_seen)
+        online: isRecentlyOnline(d.last_seen),
+        connections: typeof d.connections === 'number' ? d.connections : 0
       };
     });
   } catch (e) {
@@ -1920,6 +1925,11 @@ function renderDevicesList() {
     const metaParts = [];
     if (hasIp && d.app) metaParts.push(escapeHtml(d.app));
     if (d.os && d.os !== 'unknown') metaParts.push(escapeHtml(d.os));
+    // When the source has no UA (active-IPs feed), show connection count
+    // instead so the meta line still says something useful.
+    if (hasIp && !d.app && d.connections > 0) {
+      metaParts.push(d.connections + ' ' + (d.connections === 1 ? t.activeConn : t.activeConns));
+    }
     if (rel) metaParts.push(rel);
     const meta = metaParts.join(' <span class="sep">·</span> ');
 

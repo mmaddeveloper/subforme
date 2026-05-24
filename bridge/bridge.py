@@ -13,7 +13,8 @@ Env vars (loaded from systemd EnvironmentFile):
                     with HTTPS — point both at your panel's cert files so
                     the same domain (with a different port) Just Works
     TLS_KEY_FILE    matching private key
-    LIMIT           max history rows to request (default 50)
+    MAX_DEVICES     max IPs returned per query (default 3, sorted by active
+                    connection count)
     CACHE_SECONDS   per-token cache TTL (default 30)
     CACHE_MAX       max cached tokens (default 4096, LRU evicts above this)
     ALLOWED_ORIGIN  CORS Origin allow-list (default: echo the request Origin
@@ -30,7 +31,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections import OrderedDict
-from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
@@ -47,7 +47,7 @@ ADMIN_USER = _require_env("PG_ADMIN_USER")
 ADMIN_PASS = _require_env("PG_ADMIN_PASS")
 try:
     PORT = int(os.environ.get("PORT", "8787"))
-    LIMIT = int(os.environ.get("LIMIT", "50"))
+    MAX_DEVICES = int(os.environ.get("MAX_DEVICES", "3"))
     CACHE_SECONDS = int(os.environ.get("CACHE_SECONDS", "30"))
     CACHE_MAX = int(os.environ.get("CACHE_MAX", "4096"))
 except ValueError as _e:
@@ -64,41 +64,6 @@ _jwt_lock = threading.Lock()
 
 _cache: "OrderedDict[str, tuple[float, list]]" = OrderedDict()
 _cache_lock = threading.Lock()
-
-# Discovered-at-runtime sub_update URL template. Once a candidate returns
-# 200 for the first user, we pin it so every subsequent lookup is one HTTP
-# call instead of probing.
-_sub_update_path_tmpl: str | None = None
-_sub_update_lock = threading.Lock()
-
-
-def _api_user_paths(quoted_user: str) -> list[str]:
-    """Candidate paths for the user's sub_update history, in preference
-    order. PasarGuard 4.0.x uses singular `/api/user/`; later builds also
-    expose `/api/users/`. If we've already locked one in, return just it."""
-    with _sub_update_lock:
-        if _sub_update_path_tmpl is not None:
-            return [_sub_update_path_tmpl.format(user=quoted_user, limit=LIMIT)]
-    return [
-        f"/api/user/{quoted_user}/sub_update?limit={LIMIT}",
-        f"/api/users/{quoted_user}/sub_update?limit={LIMIT}",
-    ]
-
-
-def _remember_sub_update_path(path: str) -> None:
-    """Convert a concrete path back into a template so we hit the same
-    endpoint shape next time without re-probing."""
-    global _sub_update_path_tmpl
-    if "/api/user/" in path:
-        tmpl = "/api/user/{user}/sub_update?limit={limit}"
-    elif "/api/users/" in path:
-        tmpl = "/api/users/{user}/sub_update?limit={limit}"
-    else:
-        return
-    with _sub_update_lock:
-        if _sub_update_path_tmpl != tmpl:
-            _sub_update_path_tmpl = tmpl
-            print(f"[bridge] pinned sub_update path template: {tmpl}", file=sys.stderr)
 
 
 def _http(method: str, url: str, data=None, headers=None, timeout: int = 10):
@@ -146,21 +111,6 @@ def get_admin_jwt(force_refresh: bool = False) -> str:
         return _jwt
 
 
-def _to_unix(iso: str) -> int:
-    """Parse PasarGuard's `created_at`. Treats naive timestamps as UTC —
-    .timestamp() on a naive datetime defaults to local time, which would
-    skew "last seen" by the host's tz offset on non-UTC servers."""
-    if not iso:
-        return 0
-    try:
-        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return int(dt.timestamp())
-    except Exception:
-        return 0
-
-
 def _cache_get(token: str):
     with _cache_lock:
         hit = _cache.get(token)
@@ -206,15 +156,17 @@ def get_devices(token: str):
         print(f"[bridge] no username in /info response for …{tail}", file=sys.stderr)
         return []
 
-    # Step 2: pull IP + UA history with admin auth.
-    # (a) Different PasarGuard versions expose the endpoint at different
-    #     paths. 4.0.x uses /api/user/{username}/sub_update (singular);
-    #     newer builds also have /api/users/{username}/sub_update (plural).
-    #     Try the candidates and cache the one that worked.
-    # (b) Retry once on 401 in case the cached JWT was revoked (admin
-    #     password rotated, panel restart).
+    # Step 2: pull *active* connection IPs from the panel's node aggregator.
+    # /api/node/online_stats/{username}/ip returns the IPs xray/sing-box is
+    # currently terminating for this user across all nodes — i.e. the real
+    # device IPs using the VPN right now, not the IPs that downloaded the
+    # subscription URL at some point in the past.
+    # Response shape: { "nodes": { <node_id>: { "ips": { <ip>: <count> } } } }
+    #
+    # Retry once on 401 in case the cached JWT was revoked (admin password
+    # rotated, panel restart).
     quoted_user = urllib.parse.quote(username, safe="")
-    candidate_paths = _api_user_paths(quoted_user)
+    url = f"{PANEL_URL}/api/node/online_stats/{quoted_user}/ip"
     status, payload = 0, b""
     for attempt in range(2):
         try:
@@ -222,45 +174,40 @@ def get_devices(token: str):
         except Exception as e:
             print(f"[bridge] admin auth failed: {e}", file=sys.stderr)
             return []
-        chosen = None
-        for path in candidate_paths:
-            status, payload = _http(
-                "GET",
-                f"{PANEL_URL}{path}",
-                headers={"Authorization": f"Bearer {jwt}"},
-            )
-            if status == 200:
-                chosen = path
-                break
-            if status == 401:
-                break  # JWT issue — bail to retry logic below
-        if chosen:
-            _remember_sub_update_path(chosen)
-            break
+        status, payload = _http("GET", url, headers={"Authorization": f"Bearer {jwt}"})
         if status == 401 and attempt == 0:
             continue
         break
     if status != 200:
-        print(f"[bridge] sub_update for {username} returned {status} on all candidates", file=sys.stderr)
+        print(f"[bridge] online_stats for {username} returned {status}", file=sys.stderr)
         return []
     try:
-        updates = json.loads(payload).get("updates", []) or []
+        nodes_obj = (json.loads(payload).get("nodes") or {})
     except Exception as e:
-        print(f"[bridge] sub_update JSON parse failed for {username}: {e}", file=sys.stderr)
+        print(f"[bridge] online_stats JSON parse failed for {username}: {e}", file=sys.stderr)
         return []
 
-    # Step 3: dedupe by ip+UA, newest-first
-    seen: dict = {}
-    for u in updates:
-        ip = u.get("ip") or None
-        ua = u.get("user_agent") or ""
-        ts = _to_unix(u.get("created_at") or "")
-        key = f"{ip or ''}|{ua}"
-        prev = seen.get(key)
-        if not prev or prev["last_seen"] < ts:
-            seen[key] = {"ip": ip, "user_agent": ua, "last_seen": ts}
+    # Step 3: aggregate connection counts per IP across all nodes, then take
+    # the top MAX_DEVICES (default 3) by connection count.
+    ip_counts: dict = {}
+    for node_data in nodes_obj.values():
+        if not node_data:
+            continue
+        for ip, count in (node_data.get("ips") or {}).items():
+            if not ip:
+                continue
+            ip_counts[ip] = ip_counts.get(ip, 0) + int(count or 0)
 
-    devices = sorted(seen.values(), key=lambda d: d["last_seen"], reverse=True)
+    now_ts = int(time.time())
+    devices = [
+        {
+            "ip": ip,
+            "user_agent": "",          # the node API doesn't expose UA
+            "last_seen": now_ts,       # if we see it here, it's online now
+            "connections": count,
+        }
+        for ip, count in sorted(ip_counts.items(), key=lambda kv: -kv[1])
+    ][:MAX_DEVICES]
 
     _maybe_warn_loopback(devices)
     _cache_put(token, devices)
