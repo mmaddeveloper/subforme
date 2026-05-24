@@ -88,7 +88,27 @@ Open any user's subscription link in a browser and the new page appears.
 
 ### Updating
 
-To update to the latest version, just re-run the `wget` command for your panel. The `-N` flag only re-downloads if the remote file is newer.
+To update to the latest version, **re-run the same `wget` command you used to install**, then restart your panel. The `-N` flag only re-downloads if the file on GitHub is newer than what you have, so it's safe to run any time.
+
+**PasarGuard:**
+```sh
+sudo wget -N -P /var/lib/pasarguard/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+pasarguard restart
+```
+
+**Marzban:**
+```sh
+sudo wget -N -P /var/lib/marzban/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+marzban restart
+```
+
+**Marzneshin:**
+```sh
+sudo wget -N -P /var/lib/marzneshin/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+marzneshin restart
+```
+
+After updating, open any subscription link with **Ctrl+F5** (or clear your browser cache) so the browser picks up the new file instead of serving the old one from cache.
 
 ## Customization
 
@@ -232,7 +252,27 @@ Built for the [PasarGuard](https://github.com/PasarGuard/panel) panel.
 
 ### بروزرسانی
 
-برای بروزرسانی به آخرین نسخه فقط کافیست دستور `wget` بالا را دوباره اجرا کنی — فلگ `-N` فقط در صورتی فایل را دانلود می‌کند که نسخه‌ی روی گیت‌هاب جدیدتر باشد.
+برای بروزرسانی به آخرین نسخه، **همون دستور `wget` که اول نصب کردی رو دوباره اجرا کن** و بعد پنل رو ری‌استارت کن. به‌خاطر فلگ `-N`، فقط در صورتی فایل دانلود می‌شه که نسخه‌ی روی گیت‌هاب جدیدتر باشه — یعنی هر وقت بخوای می‌تونی این دستور رو اجرا کنی، بدون نگرانی.
+
+**PasarGuard:**
+```sh
+sudo wget -N -P /var/lib/pasarguard/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+pasarguard restart
+```
+
+**Marzban:**
+```sh
+sudo wget -N -P /var/lib/marzban/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+marzban restart
+```
+
+**Marzneshin:**
+```sh
+sudo wget -N -P /var/lib/marzneshin/templates/subscription/ https://github.com/mmaddeveloper/subforme/releases/latest/download/index.html
+marzneshin restart
+```
+
+بعد از آپدیت، یکی از صفحه‌های اشتراک رو با **Ctrl+F5** (یا با پاک کردن کش مرورگر) باز کن تا مرورگر نسخه‌ی جدید رو بگیره و نسخه‌ی قدیمی توی کش رو نشون نده.
 
 ### شخصی‌سازی
 لینک‌های پشتیبانی، تم پیش‌فرض و سایر تنظیمات در ابتدای بخش `<script>` فایل `index.html` قابل تغییرند. برای جزئیات بیشتر بخش انگلیسی بالا را ببینید.
