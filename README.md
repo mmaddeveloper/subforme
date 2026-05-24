@@ -39,6 +39,27 @@ Personalized themes, connected-device tracking, multi-language support — no bu
 
 ## Installation
 
+### One-line install (template + live IP tracking)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/mmaddeveloper/subforme/main/install.sh | sudo bash
+```
+
+The installer downloads the template, configures the panel, and sets up a tiny
+local Python service that exposes per-user IP+UA history (so the **Connected
+Devices** section shows real devices, not just the last fetch). Defaults to
+PasarGuard — pass `--panel marzban` or `--panel marzneshin` for the others.
+
+Skip the IP bridge with `--no-bridge` if you only want the template (the
+section then falls back to the last-known device from `sub_last_user_agent`).
+
+After it finishes, the installer prints a small nginx snippet to add inside
+your panel's existing `server { }` block — that's the only manual step.
+
+### Manual install
+
+If you prefer to do it by hand, the steps for each panel are below.
+
 ### PasarGuard
 
 1. **Download the template:**
