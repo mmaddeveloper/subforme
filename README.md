@@ -11,7 +11,7 @@ Personalized themes, connected-device tracking, multi-language support — no bu
 
 [Installation](#installation) · [Customization](#customization) · [فارسی](#فارسی)
 
-<img src="screenshots/preview.png" alt="Plus Collection preview" width="380" />
+<img src="screenshots/theme-midnight.png" alt="Plus Collection preview" width="380" />
 
 </div>
 
@@ -33,9 +33,9 @@ Personalized themes, connected-device tracking, multi-language support — no bu
 
 ## Screenshots
 
-| Midnight | Gold | Emerald |
+| Midnight | Gold | Crimson |
 |----------|------|---------|
-| <img src="screenshots/theme-midnight.png" width="220"/> | <img src="screenshots/theme-gold.png" width="220"/> | <img src="screenshots/theme-emerald.png" width="220"/> |
+| <img src="screenshots/theme-midnight.png" width="220"/> | <img src="screenshots/theme-gold.png" width="220"/> | <img src="screenshots/theme-crimson.png" width="220"/> |
 
 ## Installation
 
