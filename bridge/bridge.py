@@ -3,17 +3,26 @@
 PasarGuard/Marzban's per-user IP+UA history to the subscription template.
 
 Env vars (loaded from systemd EnvironmentFile):
-    PANEL_URL       e.g. http://127.0.0.1:8000
+    PANEL_URL       e.g. http://127.0.0.1:8000 or https://panel.example.com:2053
     PG_ADMIN_USER   panel admin username (read-capable is enough)
     PG_ADMIN_PASS   panel admin password
-    PORT            local bind port (default 8787)
+    PORT            bind port (default 8787)
+    BIND_HOST       bind address (default 127.0.0.1; use 0.0.0.0 to expose
+                    publicly when running without an upstream nginx)
+    TLS_CERT_FILE   if set together with TLS_KEY_FILE, the bridge listens
+                    with HTTPS — point both at your panel's cert files so
+                    the same domain (with a different port) Just Works
+    TLS_KEY_FILE    matching private key
     LIMIT           max history rows to request (default 50)
     CACHE_SECONDS   per-token cache TTL (default 30)
     CACHE_MAX       max cached tokens (default 4096, LRU evicts above this)
+    ALLOWED_ORIGIN  CORS Origin allow-list (default: echo the request Origin
+                    only when it matches the panel's host, else no header)
 """
 
 import json
 import os
+import ssl
 import sys
 import threading
 import time
@@ -44,6 +53,10 @@ try:
 except ValueError as _e:
     sys.stderr.write(f"[bridge] invalid numeric env var: {_e}\n")
     sys.exit(2)
+BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")
+TLS_CERT_FILE = os.environ.get("TLS_CERT_FILE", "").strip() or None
+TLS_KEY_FILE = os.environ.get("TLS_KEY_FILE", "").strip() or None
+ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "").strip() or None
 
 _jwt: str | None = None
 _jwt_exp: float = 0.0
@@ -281,22 +294,44 @@ def _maybe_warn_loopback(devices):
     )
 
 
+def _cors_origin(req_origin: str | None) -> str | None:
+    """Return the value to put in Access-Control-Allow-Origin (or None).
+    If ALLOWED_ORIGIN is set, only echo origins on that list. Otherwise
+    echo whatever the browser sent (the alternative — `*` — would let any
+    site read someone's IP history with just the token)."""
+    if not req_origin:
+        return None
+    if ALLOWED_ORIGIN:
+        allowed = {o.strip() for o in ALLOWED_ORIGIN.split(",") if o.strip()}
+        return req_origin if req_origin in allowed else None
+    return req_origin
+
+
 class Handler(BaseHTTPRequestHandler):
     def _json(self, status: int, body):
         raw = json.dumps(body).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Cache-Control", "no-store")
-        # The bridge sits behind same-origin nginx by default; allow only the
-        # request's own origin so other sites can't read someone's IP history
-        # if they happen to obtain a sub token.
-        origin = self.headers.get("Origin")
-        if origin:
-            self.send_header("Access-Control-Allow-Origin", origin)
+        cors = _cors_origin(self.headers.get("Origin"))
+        if cors:
+            self.send_header("Access-Control-Allow-Origin", cors)
             self.send_header("Vary", "Origin")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
+
+    def do_OPTIONS(self):
+        # CORS preflight — required when the template fetch is cross-origin
+        cors = _cors_origin(self.headers.get("Origin"))
+        self.send_response(204)
+        if cors:
+            self.send_header("Access-Control-Allow-Origin", cors)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Accept, Content-Type")
+            self.send_header("Access-Control-Max-Age", "600")
+        self.end_headers()
 
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
@@ -324,8 +359,16 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
-    print(f"[bridge] listening on 127.0.0.1:{PORT} -> {PANEL_URL}", flush=True)
+    server = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
+    scheme = "http"
+    if TLS_CERT_FILE and TLS_KEY_FILE:
+        ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        ctx.load_cert_chain(certfile=TLS_CERT_FILE, keyfile=TLS_KEY_FILE)
+        server.socket = ctx.wrap_socket(server.socket, server_side=True)
+        scheme = "https"
+    elif TLS_CERT_FILE or TLS_KEY_FILE:
+        sys.stderr.write("[bridge] TLS_CERT_FILE and TLS_KEY_FILE must both be set; falling back to plain HTTP\n")
+    print(f"[bridge] listening on {scheme}://{BIND_HOST}:{PORT} -> {PANEL_URL}", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
