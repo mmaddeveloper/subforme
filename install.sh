@@ -80,11 +80,79 @@ case "$PANEL" in
 esac
 TEMPLATE_BASE="$(dirname "$TEMPLATE_DIR")/"
 
+# Parse the panel's .env to discover how it's actually deployed. Two common
+# topologies:
+#   A) nginx in front, panel on localhost (UVICORN_HOST=127.0.0.1, no SSL_*)
+#   B) uvicorn binds publicly with its own TLS (UVICORN_HOST=0.0.0.0,
+#      UVICORN_SSL_CERTFILE set) — this is PasarGuard 4.x's default
+# The bridge needs different wiring in each case.
+PANEL_UVICORN_HOST=""
+PANEL_UVICORN_PORT=""
+PANEL_SSL_CERT=""
+PANEL_SSL_KEY=""
+PANEL_HOSTNAME=""
+PANEL_DIRECT_TLS=false
+if [ -f "$ENV_FILE" ]; then
+    _strip() { sed -n "s/^$1[[:space:]]*=[[:space:]]*//p" "$ENV_FILE" | head -1 | sed 's/^"//;s/"$//' | tr -d "'"; }
+    PANEL_UVICORN_HOST=$(_strip UVICORN_HOST)
+    PANEL_UVICORN_PORT=$(_strip UVICORN_PORT)
+    PANEL_SSL_CERT=$(_strip UVICORN_SSL_CERTFILE)
+    PANEL_SSL_KEY=$(_strip UVICORN_SSL_KEYFILE)
+fi
+if [ -n "$PANEL_SSL_CERT" ] && [ -f "$PANEL_SSL_CERT" ]; then
+    PANEL_DIRECT_TLS=true
+    # Pull the hostname from the cert path (e.g. /var/lib/pasarguard/certs/foo.example.com/fullchain.pem)
+    PANEL_HOSTNAME=$(echo "$PANEL_SSL_CERT" | sed -n 's|.*/certs/\([^/]*\)/.*|\1|p')
+    # Fallback: read CN from the cert itself
+    if [ -z "$PANEL_HOSTNAME" ] && command -v openssl >/dev/null 2>&1; then
+        PANEL_HOSTNAME=$(openssl x509 -in "$PANEL_SSL_CERT" -noout -subject 2>/dev/null \
+            | sed 's/.*CN[[:space:]]*=[[:space:]]*//;s/[,/].*//' | tr -d ' ')
+    fi
+fi
+
+# If --panel-url wasn't passed, build it from what we discovered so the
+# bridge talks to the right place. In direct-TLS mode use the hostname
+# (loopback would fail SSL cert verification); otherwise loopback HTTP.
+if [ "$PANEL_URL" = "http://127.0.0.1:8000" ]; then
+    if [ "$PANEL_DIRECT_TLS" = "true" ] && [ -n "$PANEL_HOSTNAME" ] && [ -n "$PANEL_UVICORN_PORT" ]; then
+        PANEL_URL="https://$PANEL_HOSTNAME:$PANEL_UVICORN_PORT"
+    elif [ -n "$PANEL_UVICORN_PORT" ]; then
+        PANEL_URL="http://127.0.0.1:$PANEL_UVICORN_PORT"
+    fi
+fi
+
+# Direct-TLS panels can't accept a /sub-online/ same-origin route (uvicorn
+# doesn't proxy and there's no nginx). Expose the bridge on its own public
+# port using the same cert; the template uses an absolute URL.
+BRIDGE_TLS=false
+BRIDGE_BIND="127.0.0.1"
+if [ "$PANEL_DIRECT_TLS" = "true" ] && [ -n "$PANEL_SSL_KEY" ] && [ -f "$PANEL_SSL_KEY" ] && [ -n "$PANEL_HOSTNAME" ]; then
+    BRIDGE_TLS=true
+    BRIDGE_BIND="0.0.0.0"
+    [ "$BRIDGE_PORT" = "8787" ] && BRIDGE_PORT="8443"
+    ENDPOINT_URL="https://$PANEL_HOSTNAME:$BRIDGE_PORT/api/sub/online/{token}"
+    ALLOWED_ORIGIN_VAL="https://$PANEL_HOSTNAME:$PANEL_UVICORN_PORT"
+else
+    ENDPOINT_URL="/sub-online/{token}"
+    ALLOWED_ORIGIN_VAL=""
+fi
+
 echo "==> Plus Collection installer"
 echo "    panel:      $PANEL"
 echo "    templates:  $TEMPLATE_DIR"
 echo "    panel env:  $ENV_FILE"
-echo "    bridge:     $([ "$INSTALL_BRIDGE" = true ] && echo "yes (port $BRIDGE_PORT)" || echo "no")"
+echo "    panel URL:  $PANEL_URL  ($([ "$PANEL_DIRECT_TLS" = true ] && echo "direct TLS detected" || echo "behind reverse proxy"))"
+if [ "$INSTALL_BRIDGE" = "true" ]; then
+    if [ "$BRIDGE_TLS" = true ]; then
+        echo "    bridge:     yes — https://$BRIDGE_BIND:$BRIDGE_PORT (TLS via panel cert)"
+        echo "    template:   $ENDPOINT_URL"
+    else
+        echo "    bridge:     yes — http://$BRIDGE_BIND:$BRIDGE_PORT (same-origin via nginx)"
+        echo "    template:   $ENDPOINT_URL"
+    fi
+else
+    echo "    bridge:     no"
+fi
 echo
 
 # Download helper — uses curl if available (the same binary that piped this
@@ -204,14 +272,24 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
     chmod +x "$BRIDGE_DIR/bridge.py"
     echo "    ✓ bridge service downloaded"
 
-    # Write .env with printf so values containing $, `, \, " survive intact
-    # (heredoc would expand them). umask makes the file root-only.
+    # Rewrite .env from scratch — never just append, so re-runs converge to
+    # the right state instead of stacking stale settings. printf %s keeps
+    # values containing $, `, \, " intact (heredoc would shell-expand them).
     umask 077
-    : > "$BRIDGE_DIR/.env"
-    printf 'PANEL_URL=%s\n'     "$PANEL_URL"   >> "$BRIDGE_DIR/.env"
-    printf 'PG_ADMIN_USER=%s\n' "$ADMIN_USER"  >> "$BRIDGE_DIR/.env"
-    printf 'PG_ADMIN_PASS=%s\n' "$ADMIN_PASS"  >> "$BRIDGE_DIR/.env"
-    printf 'PORT=%s\n'          "$BRIDGE_PORT" >> "$BRIDGE_DIR/.env"
+    {
+        printf 'PANEL_URL=%s\n'     "$PANEL_URL"
+        printf 'PG_ADMIN_USER=%s\n' "$ADMIN_USER"
+        printf 'PG_ADMIN_PASS=%s\n' "$ADMIN_PASS"
+        printf 'PORT=%s\n'          "$BRIDGE_PORT"
+        printf 'BIND_HOST=%s\n'     "$BRIDGE_BIND"
+        if [ "$BRIDGE_TLS" = "true" ]; then
+            printf 'TLS_CERT_FILE=%s\n' "$PANEL_SSL_CERT"
+            printf 'TLS_KEY_FILE=%s\n'  "$PANEL_SSL_KEY"
+        fi
+        if [ -n "$ALLOWED_ORIGIN_VAL" ]; then
+            printf 'ALLOWED_ORIGIN=%s\n' "$ALLOWED_ORIGIN_VAL"
+        fi
+    } > "$BRIDGE_DIR/.env"
     umask 022
 
     cat > /etc/systemd/system/subforme-bridge.service <<EOF
@@ -249,26 +327,46 @@ EOF
     systemctl restart subforme-bridge   # picks up bridge.py + .env changes on re-runs
     sleep 1
     if systemctl is-active --quiet subforme-bridge; then
-        echo "    ✓ bridge running on 127.0.0.1:$BRIDGE_PORT"
+        SCHEME=$([ "$BRIDGE_TLS" = "true" ] && echo "https" || echo "http")
+        echo "    ✓ bridge running on $SCHEME://$BRIDGE_BIND:$BRIDGE_PORT"
     else
         echo "    ✗ bridge failed to start — check: journalctl -u subforme-bridge -n 50"
     fi
 
-    # Patch ONLINE_IPS_ENDPOINT in the freshly-downloaded template. Three
-    # possible states: unset (empty string in template), already set to our
-    # value (re-run / update), or set to something else (custom edit).
-    if grep -q "const ONLINE_IPS_ENDPOINT = '/sub-online/{token}';" "$TEMPLATE_DIR/index.html"; then
-        echo "    ✓ template ONLINE_IPS_ENDPOINT already wired to bridge"
-    elif grep -q "const ONLINE_IPS_ENDPOINT = '';" "$TEMPLATE_DIR/index.html"; then
-        sed -i.bak "s|const ONLINE_IPS_ENDPOINT = '';|const ONLINE_IPS_ENDPOINT = '/sub-online/{token}';|" "$TEMPLATE_DIR/index.html"
+    # Always set the template's ONLINE_IPS_ENDPOINT to the right value for
+    # this install. The line uses single quotes in the source, so the regex
+    # accepts any current single-quoted value and replaces it in place. This
+    # makes re-runs converge — moving between nginx-proxied and direct-TLS
+    # modes works without manual edits.
+    if grep -q "const ONLINE_IPS_ENDPOINT = '" "$TEMPLATE_DIR/index.html"; then
+        # Escape the replacement value's `|`s and `&`s for sed
+        ESC=$(printf '%s' "$ENDPOINT_URL" | sed 's/[\\&|]/\\&/g')
+        sed -i.bak "s|const ONLINE_IPS_ENDPOINT = '[^']*';|const ONLINE_IPS_ENDPOINT = '$ESC';|" "$TEMPLATE_DIR/index.html"
         rm -f "$TEMPLATE_DIR/index.html.bak"
-        echo "    ✓ template ONLINE_IPS_ENDPOINT set to /sub-online/{token}"
+        echo "    ✓ template ONLINE_IPS_ENDPOINT -> $ENDPOINT_URL"
     else
-        echo "    ⚠ couldn't find the ONLINE_IPS_ENDPOINT marker in the template — the live-IPs feature won't work until you edit it manually" >&2
-        echo "    ⚠ open $TEMPLATE_DIR/index.html and set: const ONLINE_IPS_ENDPOINT = '/sub-online/{token}';" >&2
+        echo "    ⚠ ONLINE_IPS_ENDPOINT marker not found in $TEMPLATE_DIR/index.html — open it and set:" >&2
+        echo "        const ONLINE_IPS_ENDPOINT = '$ENDPOINT_URL';" >&2
     fi
 
-    cat <<NGINX
+    if [ "$BRIDGE_TLS" = "true" ]; then
+        # Bridge listens publicly with TLS; open the firewall best-effort
+        if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+            ufw allow "$BRIDGE_PORT"/tcp >/dev/null 2>&1 && echo "    ✓ ufw: $BRIDGE_PORT/tcp opened"
+        elif command -v iptables >/dev/null 2>&1; then
+            iptables -C INPUT -p tcp --dport "$BRIDGE_PORT" -j ACCEPT 2>/dev/null \
+                || iptables -A INPUT -p tcp --dport "$BRIDGE_PORT" -j ACCEPT 2>/dev/null \
+                && echo "    ✓ iptables: $BRIDGE_PORT/tcp ACCEPT rule ensured"
+        fi
+        cat <<NOTE
+
+==> All done. If you're on a cloud provider with a separate firewall (Hetzner,
+    DigitalOcean, AWS), also open TCP port $BRIDGE_PORT in their dashboard.
+    Subscription pages will fetch IPs from $ENDPOINT_URL automatically.
+
+NOTE
+    else
+        cat <<NGINX
 
 ==> Final step (manual): expose the bridge same-origin via nginx.
     Add inside your panel's server { } block, then reload nginx:
@@ -279,6 +377,7 @@ EOF
     }
 
 NGINX
+    fi
 fi
 
 # -------------------- 4) restart panel --------------------
