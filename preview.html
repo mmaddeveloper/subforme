@@ -686,29 +686,73 @@ body::before {
   padding: 0 2px;
 }
 .usage-total { font-family: var(--serif); white-space: nowrap; }
-.usage-total .num { font-size: 26px; font-weight: 700; }
+.usage-total .num { font-size: 28px; font-weight: 700; }
 .usage-total .unit { font-size: 12px; color: var(--ink-3); font-family: var(--mono); letter-spacing: 0.08em; margin-inline-start: 4px; }
 .usage-period-label { font-family: var(--mono); font-size: 9px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
 .usage-chart-wrap {
-  padding: 12px;
+  padding: 14px 12px 8px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
-  height: 120px;
   position: relative;
 }
-.usage-chart { width: 100%; height: 100%; display: block; overflow: visible; }
-.usage-chart .bar { fill: var(--accent); opacity: 0.55; transition: opacity 0.15s; cursor: pointer; }
-.usage-chart .bar:hover { opacity: 1; }
-.usage-chart .axis-label {
+.usage-chart {
+  display: flex;
+  align-items: flex-end;
+  height: 90px;
+  gap: 3px;
+}
+.usage-bar {
+  flex: 1;
+  min-width: 0;
+  display: flex; align-items: flex-end;
+  cursor: pointer;
+  position: relative;
+}
+.usage-bar .fill {
+  width: 100%;
+  background: linear-gradient(to top, var(--accent), color-mix(in srgb, var(--accent) 60%, transparent));
+  border-radius: 3px 3px 1px 1px;
+  min-height: 2px;
+  transition: filter 0.15s, transform 0.15s;
+  transform-origin: bottom;
+}
+.usage-bar:hover .fill,
+.usage-bar.active .fill { filter: brightness(1.2); transform: scaleY(1.03); }
+.usage-bar.zero .fill {
+  background: var(--line-2);
+  opacity: 0.5;
+}
+.usage-axis {
+  display: flex; justify-content: space-between;
+  margin-top: 8px;
+  padding: 0 2px;
   font-family: var(--mono);
-  font-size: 6px;
-  fill: var(--ink-4);
+  font-size: 9px;
+  color: var(--ink-4);
   letter-spacing: 0.04em;
 }
+.usage-axis span { flex: 0 0 auto; }
+.usage-tooltip {
+  position: absolute;
+  background: var(--surface-2);
+  border: 1px solid var(--line-2);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-family: var(--mono); font-size: 10px;
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+}
+.usage-tooltip.show { opacity: 1; }
+.usage-tooltip .when { color: var(--ink-3); margin-bottom: 2px; font-size: 9px; letter-spacing: 0.06em; text-transform: uppercase; }
+.usage-tooltip .what { color: var(--ink); font-weight: 700; font-size: 12px; font-family: var(--serif); }
 .usage-empty {
   display: flex; align-items: center; justify-content: center;
-  height: 100%;
+  height: 90px;
   font-family: var(--mono); font-size: 10px;
   color: var(--ink-3);
   letter-spacing: 0.06em;
@@ -1299,7 +1343,9 @@ body::before {
       </div>
       <div class="usage-period-label" id="usagePeriodLabel">—</div>
     </div>
-    <div class="usage-chart-wrap" id="usageChartWrap"></div>
+    <div class="usage-chart-wrap" id="usageChartWrap">
+      <div class="usage-tooltip" id="usageTooltip"></div>
+    </div>
   </section>
 
   <!-- APPS -->
@@ -2237,6 +2283,11 @@ function fmtBucketLabel(date, period, full) {
       ? date.toLocaleString(locale, { hour: '2-digit', minute: '2-digit' })
       : date.getHours().toString().padStart(2, '0');
   }
+  if (period === 'week') {
+    return full
+      ? date.toLocaleDateString(locale, { weekday: 'short', day: 'numeric', month: 'short' })
+      : date.toLocaleDateString(locale, { weekday: 'narrow' });
+  }
   return full
     ? date.toLocaleDateString(locale, { day: 'numeric', month: 'short' })
     : date.getDate().toString();
@@ -2245,31 +2296,99 @@ function fmtBucketLabel(date, period, full) {
 function renderUsageChart(data, period) {
   const wrap = $('#usageChartWrap');
   if (!data || data.length === 0) {
-    wrap.innerHTML = `<div class="usage-empty">${escapeHtml(I18N[LANG].noUsageYet)}</div>`;
+    wrap.innerHTML = `<div class="usage-empty">${escapeHtml(I18N[LANG].noUsageYet)}</div>
+      <div class="usage-tooltip" id="usageTooltip"></div>`;
     return;
   }
+
   const max = Math.max(...data.map(d => d.v), 1);
+  const bars = data.map((d, i) => {
+    const pct = max > 0 ? Math.max((d.v / max) * 100, 1) : 0;
+    const zeroCls = d.v === 0 ? ' zero' : '';
+    return `<div class="usage-bar${zeroCls}" data-i="${i}">
+      <div class="fill" style="height:${pct.toFixed(2)}%"></div>
+    </div>`;
+  }).join('');
+
+  // Axis labels: pick a handful of evenly-spaced indices and align each
+  // label to the *center* of its bar by injecting placeholder spans for
+  // the unused positions. That keeps "00 · 06 · 12 · 18 · 23" actually
+  // sitting under the right hour, instead of bunched on the SVG baseline.
   const n = data.length;
-  const barW = 100 / n;
-  let svg = '<svg viewBox="0 0 100 50" preserveAspectRatio="none" class="usage-chart">';
+  const labelEvery = period === 'day' ? Math.max(1, Math.floor(n / 5)) :
+                     period === 'week' ? 1 : Math.max(1, Math.floor(n / 6));
+  const axisCells = [];
   for (let i = 0; i < n; i++) {
+    const shouldLabel = i === 0 || i === n - 1 || i % labelEvery === 0;
+    axisCells.push(`<span style="flex:1;text-align:center;">${shouldLabel ? escapeHtml(fmtBucketLabel(data[i].t, period)) : ''}</span>`);
+  }
+
+  wrap.innerHTML = `
+    <div class="usage-chart">${bars}</div>
+    <div class="usage-axis">${axisCells.join('')}</div>
+    <div class="usage-tooltip" id="usageTooltip"></div>
+  `;
+
+  // Wire up hover tooltips
+  const chart = wrap.querySelector('.usage-chart');
+  const tooltip = $('#usageTooltip');
+  chart.querySelectorAll('.usage-bar').forEach(barEl => {
+    const i = parseInt(barEl.dataset.i, 10);
     const d = data[i];
-    const h = max > 0 ? (d.v / max) * 42 : 0;
-    const y = 48 - h;
-    const x = i * barW + barW * 0.1;
-    const w = barW * 0.8;
-    const tip = `${fmtBucketLabel(d.t, period, true)} — ${fmtSize(d.v).value}${fmtSize(d.v).unit}`;
-    svg += `<rect class="bar" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${Math.max(h, 0.4).toFixed(2)}" rx="0.3"><title>${escapeHtml(tip)}</title></rect>`;
-  }
-  // Add 3-5 axis labels evenly spaced
-  const labelCount = period === 'day' ? 5 : 3;
-  for (let k = 0; k < labelCount; k++) {
-    const i = Math.round(k * (n - 1) / (labelCount - 1));
-    const x = i * barW + barW / 2;
-    svg += `<text class="axis-label" x="${x.toFixed(2)}" y="50" text-anchor="middle">${escapeHtml(fmtBucketLabel(data[i].t, period))}</text>`;
-  }
-  svg += '</svg>';
-  wrap.innerHTML = svg;
+    const onEnter = () => {
+      const when = fmtBucketLabel(d.t, period, true);
+      const sz = fmtSize(d.v);
+      tooltip.innerHTML = `<div class="when">${escapeHtml(when)}</div><div class="what">${sz.value}<span style="opacity:0.6"> ${sz.unit}</span></div>`;
+      tooltip.classList.add('show');
+      barEl.classList.add('active');
+      positionUsageTooltip(barEl, tooltip, wrap);
+    };
+    const onLeave = () => {
+      tooltip.classList.remove('show');
+      barEl.classList.remove('active');
+    };
+    barEl.addEventListener('mouseenter', onEnter);
+    barEl.addEventListener('mouseleave', onLeave);
+    // Touch / tap support
+    barEl.addEventListener('click', e => {
+      e.stopPropagation();
+      // Clear any other active bar
+      chart.querySelectorAll('.usage-bar.active').forEach(b => b !== barEl && b.classList.remove('active'));
+      if (tooltip.classList.contains('show') && barEl.classList.contains('active')) {
+        onLeave();
+      } else {
+        onEnter();
+      }
+    });
+  });
+  // Dismiss tooltip on outside click
+  document.addEventListener('click', _usageDismissTip, { capture: true });
+}
+
+function _usageDismissTip(e) {
+  const wrap = document.getElementById('usageChartWrap');
+  if (!wrap || wrap.contains(e.target)) return;
+  const tip = document.getElementById('usageTooltip');
+  if (tip) tip.classList.remove('show');
+  wrap.querySelectorAll('.usage-bar.active').forEach(b => b.classList.remove('active'));
+}
+
+function positionUsageTooltip(barEl, tooltip, wrap) {
+  // Make sure dimensions are known: temporarily show off-screen if needed
+  tooltip.style.left = '0px';
+  tooltip.style.top = '0px';
+  const barRect = barEl.getBoundingClientRect();
+  const wrapRect = wrap.getBoundingClientRect();
+  const tipW = tooltip.offsetWidth;
+  const tipH = tooltip.offsetHeight;
+  let x = (barRect.left - wrapRect.left) + barRect.width / 2 - tipW / 2;
+  let y = (barRect.top - wrapRect.top) - tipH - 8;
+  // Keep within the wrap horizontally
+  x = Math.max(4, Math.min(x, wrapRect.width - tipW - 4));
+  // If above would clip, flip below
+  if (y < 4) y = (barRect.bottom - wrapRect.top) + 8;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
 }
 
 async function renderUsageStats() {
