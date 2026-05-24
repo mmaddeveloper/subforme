@@ -162,15 +162,25 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
     fi
 
     # Reuse credentials from a prior install so re-running the script is
-    # silent (true update). Flags (--admin / --pass) still override.
+    # silent (true update). Flags (--admin / --pass) still override. Detect
+    # a corrupted .env (e.g. from a previous half-installed run where a
+    # heredoc consumed part of the install.sh body into the password slot)
+    # and refuse to reuse it.
     if [ -f "$BRIDGE_DIR/.env" ]; then
-        OLD_USER=$(sed -n 's/^PG_ADMIN_USER=//p' "$BRIDGE_DIR/.env")
-        OLD_PASS=$(sed -n 's/^PG_ADMIN_PASS=//p' "$BRIDGE_DIR/.env")
-        OLD_PURL=$(sed -n 's/^PANEL_URL=//p'     "$BRIDGE_DIR/.env")
-        [ -z "$ADMIN_USER" ] && ADMIN_USER="$OLD_USER"
-        [ -z "$ADMIN_PASS" ] && ADMIN_PASS="$OLD_PASS"
-        [ "$PANEL_URL" = "http://127.0.0.1:8000" ] && [ -n "$OLD_PURL" ] && PANEL_URL="$OLD_PURL"
-        echo "    ✓ reusing existing bridge credentials"
+        OLD_USER=$(sed -n 's/^PG_ADMIN_USER=//p' "$BRIDGE_DIR/.env" | head -1)
+        OLD_PASS=$(sed -n 's/^PG_ADMIN_PASS=//p' "$BRIDGE_DIR/.env" | head -1)
+        OLD_PURL=$(sed -n 's/^PANEL_URL=//p'     "$BRIDGE_DIR/.env" | head -1)
+        if [ -z "$OLD_USER" ] || [ -z "$OLD_PASS" ] \
+           || ! validate_env_value "stored admin username" "$OLD_USER" 2>/dev/null \
+           || ! validate_env_value "stored admin password" "$OLD_PASS" 2>/dev/null; then
+            echo "    ⚠ existing $BRIDGE_DIR/.env is missing or corrupted — ignoring it" >&2
+            rm -f "$BRIDGE_DIR/.env"
+        else
+            [ -z "$ADMIN_USER" ] && ADMIN_USER="$OLD_USER"
+            [ -z "$ADMIN_PASS" ] && ADMIN_PASS="$OLD_PASS"
+            [ "$PANEL_URL" = "http://127.0.0.1:8000" ] && [ -n "$OLD_PURL" ] && PANEL_URL="$OLD_PURL"
+            echo "    ✓ reusing existing bridge credentials"
+        fi
     fi
 
     if [ -z "$ADMIN_USER" ]; then read -rp "panel admin username: " ADMIN_USER; fi
