@@ -8,6 +8,15 @@
 #   sudo bash install.sh --panel marzban
 #   sudo bash install.sh --admin USER --pass PASS --panel-url http://127.0.0.1:8000
 
+# Everything below runs inside _subforme_main so that when invoked via
+# `curl | sudo bash`, bash buffers the *entire* function body before it
+# starts executing it. Otherwise our later `exec 0</dev/tty` would
+# redirect bash's stdin (which IS the script being piped in), and bash
+# would lose the rest of the script — the visible symptom is the banner
+# printing and then the process appearing to hang.
+
+_subforme_main() {
+
 set -euo pipefail
 
 # First thing: prove we started — so users piping via `curl | sudo bash` see
@@ -44,7 +53,17 @@ while [ $# -gt 0 ]; do
         --pass)         ADMIN_PASS="$2"; shift 2 ;;
         --bridge-port)  BRIDGE_PORT="$2"; shift 2 ;;
         -h|--help)
-            sed -n '2,9p' "$0"; exit 0 ;;
+            cat <<'HELP'
+Plus Collection installer — PasarGuard / Marzban / Marzneshin
+
+  curl -fsSL https://raw.githubusercontent.com/mmaddeveloper/subforme/main/install.sh | sudo bash
+  sudo bash install.sh                              # interactive
+  sudo bash install.sh --no-bridge                  # template only
+  sudo bash install.sh --panel marzban
+  sudo bash install.sh --admin USER --pass PASS     # non-interactive
+  sudo bash install.sh --panel-url http://127.0.0.1:8000
+HELP
+            exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 1 ;;
     esac
 done
@@ -208,3 +227,8 @@ echo "==> Restarting panel: $RESTART_CMD"
 $RESTART_CMD || echo "    (couldn't restart automatically — run '$RESTART_CMD' yourself)"
 
 echo "==> Done."
+
+}  # end _subforme_main
+
+_subforme_main "$@"
+exit $?
