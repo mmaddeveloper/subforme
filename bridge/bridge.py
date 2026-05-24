@@ -52,6 +52,41 @@ _jwt_lock = threading.Lock()
 _cache: "OrderedDict[str, tuple[float, list]]" = OrderedDict()
 _cache_lock = threading.Lock()
 
+# Discovered-at-runtime sub_update URL template. Once a candidate returns
+# 200 for the first user, we pin it so every subsequent lookup is one HTTP
+# call instead of probing.
+_sub_update_path_tmpl: str | None = None
+_sub_update_lock = threading.Lock()
+
+
+def _api_user_paths(quoted_user: str) -> list[str]:
+    """Candidate paths for the user's sub_update history, in preference
+    order. PasarGuard 4.0.x uses singular `/api/user/`; later builds also
+    expose `/api/users/`. If we've already locked one in, return just it."""
+    with _sub_update_lock:
+        if _sub_update_path_tmpl is not None:
+            return [_sub_update_path_tmpl.format(user=quoted_user, limit=LIMIT)]
+    return [
+        f"/api/user/{quoted_user}/sub_update?limit={LIMIT}",
+        f"/api/users/{quoted_user}/sub_update?limit={LIMIT}",
+    ]
+
+
+def _remember_sub_update_path(path: str) -> None:
+    """Convert a concrete path back into a template so we hit the same
+    endpoint shape next time without re-probing."""
+    global _sub_update_path_tmpl
+    if "/api/user/" in path:
+        tmpl = "/api/user/{user}/sub_update?limit={limit}"
+    elif "/api/users/" in path:
+        tmpl = "/api/users/{user}/sub_update?limit={limit}"
+    else:
+        return
+    with _sub_update_lock:
+        if _sub_update_path_tmpl != tmpl:
+            _sub_update_path_tmpl = tmpl
+            print(f"[bridge] pinned sub_update path template: {tmpl}", file=sys.stderr)
+
 
 def _http(method: str, url: str, data=None, headers=None, timeout: int = 10):
     """Wrapper that swallows non-2xx into a (status, body) pair instead of
@@ -158,22 +193,42 @@ def get_devices(token: str):
         print(f"[bridge] no username in /info response for …{tail}", file=sys.stderr)
         return []
 
-    # Step 2: pull IP + UA history with admin auth. Retry once on 401 in case
-    # the cached JWT was revoked (admin password rotated, panel restart).
+    # Step 2: pull IP + UA history with admin auth.
+    # (a) Different PasarGuard versions expose the endpoint at different
+    #     paths. 4.0.x uses /api/user/{username}/sub_update (singular);
+    #     newer builds also have /api/users/{username}/sub_update (plural).
+    #     Try the candidates and cache the one that worked.
+    # (b) Retry once on 401 in case the cached JWT was revoked (admin
+    #     password rotated, panel restart).
     quoted_user = urllib.parse.quote(username, safe="")
-    url = f"{PANEL_URL}/api/users/{quoted_user}/sub_update?limit={LIMIT}"
+    candidate_paths = _api_user_paths(quoted_user)
+    status, payload = 0, b""
     for attempt in range(2):
         try:
             jwt = get_admin_jwt(force_refresh=(attempt == 1))
         except Exception as e:
             print(f"[bridge] admin auth failed: {e}", file=sys.stderr)
             return []
-        status, payload = _http("GET", url, headers={"Authorization": f"Bearer {jwt}"})
+        chosen = None
+        for path in candidate_paths:
+            status, payload = _http(
+                "GET",
+                f"{PANEL_URL}{path}",
+                headers={"Authorization": f"Bearer {jwt}"},
+            )
+            if status == 200:
+                chosen = path
+                break
+            if status == 401:
+                break  # JWT issue — bail to retry logic below
+        if chosen:
+            _remember_sub_update_path(chosen)
+            break
         if status == 401 and attempt == 0:
-            continue  # JWT expired/revoked, refresh and retry once
+            continue
         break
     if status != 200:
-        print(f"[bridge] sub_update for {username} returned {status}", file=sys.stderr)
+        print(f"[bridge] sub_update for {username} returned {status} on all candidates", file=sys.stderr)
         return []
     try:
         updates = json.loads(payload).get("updates", []) or []
