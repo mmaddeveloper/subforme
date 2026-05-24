@@ -305,8 +305,34 @@ class Handler(BaseHTTPRequestHandler):
         pass  # silence default access logs
 
 
+class _BridgeServer(ThreadingHTTPServer):
+    # daemon_threads=True means in-flight request threads don't keep the
+    # process alive on shutdown. Without it, Ctrl+C / SIGTERM hangs until
+    # every open connection drains — systemctl restart can take 90s and
+    # the foreground process ignores Ctrl+C.
+    daemon_threads = True
+    allow_reuse_address = True
+
+
+def _install_signal_handlers(server):
+    """Shut the server down on Ctrl+C *and* on SIGTERM (which is what
+    systemd sends on `systemctl stop|restart`)."""
+    import signal
+    def _stop(signum, _frame):
+        name = signal.Signals(signum).name
+        print(f"[bridge] received {name}, shutting down", file=sys.stderr, flush=True)
+        # shutdown() blocks until serve_forever returns, so call it from a
+        # thread so we don't deadlock the signal handler.
+        threading.Thread(target=server.shutdown, daemon=True).start()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            signal.signal(sig, _stop)
+        except (ValueError, OSError):
+            pass  # not in the main thread / unsupported on this platform
+
+
 if __name__ == "__main__":
-    server = ThreadingHTTPServer((BIND_HOST, PORT), Handler)
+    server = _BridgeServer((BIND_HOST, PORT), Handler)
     scheme = "http"
     if TLS_CERT_FILE and TLS_KEY_FILE:
         ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
@@ -316,7 +342,8 @@ if __name__ == "__main__":
     elif TLS_CERT_FILE or TLS_KEY_FILE:
         sys.stderr.write("[bridge] TLS_CERT_FILE and TLS_KEY_FILE must both be set; falling back to plain HTTP\n")
     print(f"[bridge] listening on {scheme}://{BIND_HOST}:{PORT} -> {PANEL_URL}", flush=True)
+    _install_signal_handlers(server)
     try:
         server.serve_forever()
-    except KeyboardInterrupt:
+    finally:
         server.server_close()
