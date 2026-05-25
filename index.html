@@ -1291,7 +1291,6 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
   <section class="section">
     <div class="sec-head">
       <h2><span data-i18n="servers">Servers</span></h2>
-      <span class="meta"><span id="configCountMeta">0</span></span>
     </div>
     <div class="configs-grid" id="configsGrid"></div>
   </section>
@@ -1800,7 +1799,6 @@ function renderUsage() {
   else if (exp.warn) expEl.classList.add('warn');
 
   $('#renewVal').textContent = fmtRenewalDate(PG.expire);
-  $('#configCountMeta').textContent = (PG.links || []).filter(Boolean).length;
 }
 
 /* =========================================================
@@ -2108,7 +2106,6 @@ function renderConfigs() {
   const grid = $('#configsGrid');
   const items = (PG.links || []).filter(Boolean);
   grid.innerHTML = '';
-  $('#configCountMeta').textContent = items.length;
 
   if (items.length === 0) {
     grid.innerHTML = `
@@ -2355,12 +2352,11 @@ function recordIPHistory(devices) {
   }
 }
 
-// Data-limit gauge — visual language borrowed from the ECharts
-// "custom-gauge" demo (gradient arc + polygon pointer + white center
-// with shadow + big % text), but rebuilt from theme-colored shapes so
-// it works without an external image dependency. The demo's panel PNG
-// is intentionally avoided: any missing asset on the bridge would
-// leave the ring blank.
+// Data-limit gauge — uses ECharts' built-in `gauge` series rather than
+// a custom polar renderItem. The custom-renderItem approach (v1.6) was
+// fragile on mobile with prefers-reduced-motion: ECharts skipped the
+// enter-animation but the `enterFrom: { endAngle: 0 }` left the arc at
+// zero, rendering as nothing. The built-in gauge has no such gotcha.
 async function renderRingGauge(used, total) {
   const el = document.getElementById('ringGauge');
   const wrap = document.getElementById('ringWrap');
@@ -2375,148 +2371,56 @@ async function renderRingGauge(used, total) {
     }
   }
   const t = _chartTheme();
+  const anim = _chartAnim();
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   const isInf = total <= 0;
-  // Display value: percentage 0..100 (or 100 for unlimited so the ring is full).
+  // For unlimited plans the ring fills 100% (a full circle) and the
+  // centre text reads ∞. For real quotas, show the rounded percentage.
   const dataVal = isInf ? 100 : pct;
-  const valOnRadianMax = 100;
-  // Pixel offsets from the polar center for our shapes. The container
-  // is 100px square; the polar coordSys is centered at (50, 50).
-  const outerR = 46, innerR = 38, pointerR = 36, pointerBaseR = 6, centerR = 30;
+  const centerText = isInf ? '∞' : Math.round(pct) + '%';
 
-  function polarPoint(params, radius, radian) {
-    return [
-      Math.cos(radian) * radius + params.coordSys.cx,
-      -Math.sin(radian) * radius + params.coordSys.cy
-    ];
-  }
-  function pointerPoints(params, polarEndRadian) {
-    // Triangle: tip near the inside of the arc, base on the opposite
-    // side of the center (so it reads as a needle, not a wedge).
-    const tip   = polarPoint(params, pointerR, polarEndRadian);
-    const left  = polarPoint(params, pointerBaseR, polarEndRadian + Math.PI / 2);
-    const right = polarPoint(params, pointerBaseR, polarEndRadian - Math.PI / 2);
-    return [tip, left, right];
-  }
-  function makeText(val) {
-    if (isInf) return '∞';
-    return ((val / valOnRadianMax) * 100).toFixed(0) + '%';
-  }
-  const arcGradient = {
-    type: 'linear', x: 0, y: 0, x2: 1, y2: 1,
-    colorStops: [
-      { offset: 0, color: t.accent },
-      { offset: 1, color: t.accent2 }
-    ]
-  };
-
-  function renderItem(params, api) {
-    const valOnRadian = api.value(1);
-    const coords = api.coord([api.value(0), valOnRadian]);
-    // When the value is 0 (or very close to 0), polar maps it to angle 0
-    // and the pointer triangle collapses to a single pixel. Clamp to at
-    // least ~1° so the needle always has a visible footprint.
-    const polarEndRadian = Math.max(coords[3], Math.PI / 180);
-    return {
-      type: 'group',
-      children: [
-        // Background track — full ring at low alpha.
-        {
-          type: 'sector',
-          shape: {
-            cx: params.coordSys.cx, cy: params.coordSys.cy,
-            r: outerR, r0: innerR,
-            startAngle: 0, endAngle: Math.PI * 2
-          },
-          style: { fill: _withAlpha(t.ink, 0.08) },
-          silent: true
-        },
-        // Filled arc (the "progress"). startAngle/endAngle are in
-        // canvas radians; ECharts polar uses negative-Y up, so we
-        // sweep from 0 down to -polarEndRadian.
-        {
-          type: 'sector',
-          shape: {
-            cx: params.coordSys.cx, cy: params.coordSys.cy,
-            r: outerR, r0: innerR,
-            startAngle: 0, endAngle: -polarEndRadian, clockwise: false,
-            transition: 'endAngle', enterFrom: { endAngle: 0 }
-          },
-          style: {
-            fill: arcGradient,
-            shadowColor: _withAlpha(t.accent2, 0.45),
-            shadowBlur: 10
-          }
-        },
-        // Triangular needle pointer. Solid accent2 so it reads against
-        // the gradient arc and the white center.
-        {
-          type: 'polygon',
-          shape: { points: pointerPoints(params, polarEndRadian) },
-          extra: {
-            polarEndRadian: polarEndRadian,
-            transition: 'polarEndRadian',
-            enterFrom: { polarEndRadian: 0 }
-          },
-          during: (apiDuring) => {
-            apiDuring.setShape('points', pointerPoints(params, apiDuring.getExtra('polarEndRadian')));
-          },
-          style: { fill: t.accent2 }
-        },
-        // Inside white plate with the demo's blueish drop shadow.
-        {
-          type: 'circle',
-          shape: { cx: params.coordSys.cx, cy: params.coordSys.cy, r: centerR },
-          style: {
-            fill: t.surface || '#fff',
-            shadowBlur: 16,
-            // Use accent-derived shadow so the gauge stays in the same
-            // family on midnight (where the accent is a lifted indigo).
-            shadowColor: _withAlpha(t.accent2, 0.35)
-          }
-        },
-        // Big % text — animates from 0 on enter and during updates.
-        {
-          type: 'text',
-          extra: {
-            valOnRadian: valOnRadian,
-            transition: 'valOnRadian',
-            enterFrom: { valOnRadian: 0 }
-          },
-          style: {
-            text: makeText(valOnRadian),
-            fontSize: 20,            // matches --t-lg
-            fontWeight: 700,
-            fontFamily: 'var(--serif)',
-            x: params.coordSys.cx,
-            y: params.coordSys.cy,
-            fill: t.ink,
-            align: 'center', verticalAlign: 'middle',
-            enterFrom: { opacity: 0 }
-          },
-          during: (apiDuring) => {
-            apiDuring.setStyle('text', makeText(apiDuring.getExtra('valOnRadian')));
-          }
-        }
-      ]
-    };
-  }
-
-  // Gauge animations now route through _chartAnim() so the OS-level
-  // prefers-reduced-motion choice is honored even though the chart
-  // renders to canvas (where the CSS @media reset can't reach). When
-  // `isInf` we also skip animation outright since there's nothing to
-  // animate from.
-  const anim = _chartAnim();
   _ringGauge.setOption({
     ...anim,
     animation: anim.animation && !isInf,
-    dataset: { source: [[1, dataVal]] },
     tooltip: { show: false },
-    angleAxis: { type: 'value', startAngle: 0, show: false, min: 0, max: valOnRadianMax, clockwise: false },
-    radiusAxis: { type: 'value', show: false },
-    polar: { radius: '95%' },
-    series: [{ type: 'custom', coordinateSystem: 'polar', renderItem: renderItem }]
+    series: [{
+      type: 'gauge',
+      startAngle: 90,
+      endAngle: -270,
+      min: 0,
+      max: 100,
+      radius: '95%',
+      // Background ring — quiet, unobtrusive track.
+      axisLine: {
+        lineStyle: {
+          width: 8,
+          color: [[1, _withAlpha(t.ink, 0.08)]]
+        }
+      },
+      // Filled progress arc — single accent color (no two-stop gradient).
+      progress: {
+        show: true,
+        width: 8,
+        roundCap: true,
+        itemStyle: { color: t.accent }
+      },
+      pointer: { show: false },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
+      anchor: { show: false },
+      title: { show: false },
+      detail: {
+        valueAnimation: anim.animation && !isInf,
+        offsetCenter: [0, 0],
+        formatter: () => centerText,
+        color: t.ink,
+        fontFamily: 'var(--serif)',
+        fontSize: 20,
+        fontWeight: 700
+      },
+      data: [{ value: dataVal }]
+    }]
   }, true);
   wrap.classList.add('with-gauge');
 }
