@@ -19,7 +19,7 @@
    ========================================================= */
 :root {
   /* Type scale */
-  --t-xs: 12px; --t-sm: 14px; --t-md: 16px; --t-lg: 20px; --t-xl: 28px; --t-xxl: 40px;
+  --t-xxs: 11px; --t-xs: 12px; --t-sm: 14px; --t-md: 16px; --t-lg: 20px; --t-xl: 28px; --t-xxl: 40px;
   /* Spacing scale (4-base) */
   --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
   /* Radii */
@@ -2285,17 +2285,47 @@ function loadECharts() {
 }
 
 // Read CSS custom properties so the chart inherits the active theme.
+// Every chart-internal color goes through here — no hex/rgba literals
+// inside chart option objects.
 function _chartTheme() {
   const cs = getComputedStyle(document.documentElement);
   const get = k => cs.getPropertyValue(k).trim();
+  const surface = get('--surface') || '#fff';
   return {
-    accent:   get('--accent')   || '#7c5cff',
-    accent2:  get('--accent-2') || '#5eead4',
-    ink:      get('--ink')      || '#fff',
-    ink3:     get('--ink-3')    || '#888',
-    ink4:     get('--ink-4')    || '#555',
-    surface2: get('--surface-2')|| 'rgba(255,255,255,0.06)',
-    line:     get('--line')     || 'rgba(255,255,255,0.08)',
+    accent:    get('--accent')    || '#6d28d9',
+    accent2:   get('--accent-2')  || '#4f46e5',
+    ink:       get('--ink')       || '#18181b',
+    ink2:      get('--ink-2')     || '#3f3f46',
+    ink3:      get('--ink-3')     || '#52525b',
+    ink4:      get('--ink-4')     || '#71717a',
+    surface:   surface,
+    surface2:  get('--surface-2') || '#f5f5f5',
+    line:      get('--line')      || '#e4e4e7',
+    line2:     get('--line-2')    || '#d4d4d8',
+    // Tooltip uses surface so it inverts naturally on light/midnight.
+    tooltipBg:     surface,
+    tooltipBorder: get('--line')  || '#e4e4e7',
+    tooltipInk:    get('--ink')   || '#18181b',
+    tooltipInkMute: get('--ink-3')|| '#52525b',
+    // Axis chrome: subdued ink, hairline ticks.
+    axisInk:   get('--ink-3')     || '#52525b',
+    axisTick:  get('--line')      || '#e4e4e7',
+    gridLine:  get('--line')      || '#e4e4e7',
+  };
+}
+
+// Reduced-motion gate for canvas charts. ECharts animations are JS-driven,
+// so the page-level @media reset doesn't reach them — we have to consult
+// matchMedia ourselves and pass the values into setOption(). Re-evaluated
+// at every call so a mid-session OS toggle takes effect on next render.
+function _chartAnim() {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  return {
+    animation:               !reduce,
+    animationDuration:       reduce ? 0 : 600,
+    animationDurationUpdate: reduce ? 0 : 600,
+    animationEasing:         'cubicOut',
+    animationEasingUpdate:   'cubicOut',
   };
 }
 
@@ -2440,7 +2470,9 @@ async function renderRingGauge(used, total) {
           style: {
             fill: t.surface || '#fff',
             shadowBlur: 16,
-            shadowColor: 'rgba(76, 107, 167, 0.35)'
+            // Use accent-derived shadow so the gauge stays in the same
+            // family on midnight (where the accent is a lifted indigo).
+            shadowColor: _withAlpha(t.accent2, 0.35)
           }
         },
         // Big % text — animates from 0 on enter and during updates.
@@ -2453,7 +2485,7 @@ async function renderRingGauge(used, total) {
           },
           style: {
             text: makeText(valOnRadian),
-            fontSize: 20,
+            fontSize: 20,            // matches --t-lg
             fontWeight: 700,
             fontFamily: 'var(--serif)',
             x: params.coordSys.cx,
@@ -2470,12 +2502,15 @@ async function renderRingGauge(used, total) {
     };
   }
 
+  // Gauge animations now route through _chartAnim() so the OS-level
+  // prefers-reduced-motion choice is honored even though the chart
+  // renders to canvas (where the CSS @media reset can't reach). When
+  // `isInf` we also skip animation outright since there's nothing to
+  // animate from.
+  const anim = _chartAnim();
   _ringGauge.setOption({
-    animation: !isInf,
-    animationEasing: 'quarticInOut',
-    animationDuration: 1000,
-    animationDurationUpdate: 1000,
-    animationEasingUpdate: 'quarticInOut',
+    ...anim,
+    animation: anim.animation && !isInf,
     dataset: { source: [[1, dataVal]] },
     tooltip: { show: false },
     angleAxis: { type: 'value', startAngle: 0, show: false, min: 0, max: valOnRadianMax, clockwise: false },
@@ -2567,44 +2602,35 @@ function _withAlpha(c, a) {
   return `color-mix(in srgb, ${c} ${(a * 100).toFixed(0)}%, transparent)`;
 }
 
-// Adapted from the ECharts "line-tooltip-touch" demo:
-// https://echarts.apache.org/examples/en/editor.html?c=line-tooltip-touch
-//
-// Touch-first: the tooltip is parked at a fixed y, follows a draggable
-// xAxis axisPointer with a snap handle. Smoothed line over a gradient
-// area, no splitline noise. PasarGuard doesn't expose upload/download
-// separately so we draw a single Total series.
+// Usage line chart — v1.7 redesign.
+// Every color comes from _chartTheme() so the chart reads as a family
+// with the gauge + sparklines and inverts cleanly on light/midnight.
+// Visual vocabulary: thin line + flat low-alpha fill + axis-pointer snap
+// handle + tap-to-show tooltip. No emphasis glow, no white symbol border,
+// no two-stop gradient — those were 2020-era dashboard markers.
 function _usageOption(aggregated, period, total) {
+  const t = _chartTheme();
+  const anim = _chartAnim();
   const seriesData = aggregated.map(d => [new Date(d.t).getTime(), d.v]);
-  const lineColor  = '#0770FF';
-  const areaTop    = 'rgba(58, 77, 233, 0.8)';
-  const areaBottom = 'rgba(58, 77, 233, 0.3)';
-  const pointerColor = '#7581BD';
-  // Pick a value to snap to on first render — the demo uses a hard-coded
-  // date; we use the latest bucket so the cursor sits on the most recent
-  // data point. When data is empty we fall back to "now" rather than 0 —
-  // an axis value of 0 ms renders as "1970-01-01" in the pointer label.
-  // (In practice _usageEmpty() short-circuits before we get here, but
-  // the guard makes this option safe in isolation.)
+  // Snap-to value for first render: latest bucket so the cursor sits on
+  // the most recent data point. Date.now() guards the empty case (an
+  // axis value of 0 ms would render as 1970-01-01).
   const initialPointerValue = seriesData.length ? seriesData[seriesData.length - 1][0] : Date.now();
 
   return {
     title: { show: false },
     tooltip: {
-      // The demo uses triggerOn:'none' with a fixed-y position so the
-      // tooltip only follows the handle — but that defeats tap-to-read
-      // on mobile. Default trigger lets the tooltip pop up wherever the
-      // user actually tapped/hovered, and the axisPointer below still
-      // provides the snap handle for scrubbing.
       trigger: 'axis',
       triggerOn: 'mousemove|click',
       confine: true,
-      backgroundColor: 'rgba(15, 16, 22, 0.92)',
-      borderColor: 'rgba(255,255,255,0.08)',
+      // surface + line + ink come from the theme — the tooltip inverts
+      // naturally between light and midnight without a single hex literal.
+      backgroundColor: t.tooltipBg,
+      borderColor: t.tooltipBorder,
       borderWidth: 1,
       padding: [8, 12],
-      extraCssText: 'border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);',
-      textStyle: { color: '#fff', fontFamily: 'var(--mono)', fontSize: 11 },
+      extraCssText: 'border-radius:10px;box-shadow:0 4px 16px rgba(0,0,0,0.08);',
+      textStyle: { color: t.tooltipInk, fontFamily: 'var(--mono)', fontSize: 11 },
       formatter: (params) => {
         const p = Array.isArray(params) ? params[0] : params;
         if (!p) return '';
@@ -2612,9 +2638,11 @@ function _usageOption(aggregated, period, total) {
         const when = fmtBucketLabel(new Date(p.value[0]), period, true);
         const pct = total > 0 ? (p.value[1] / total) * 100 : 0;
         const pctStr = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
-        return `<div style="color:rgba(255,255,255,0.55);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">${escapeHtml(when)}</div>`
-             + `<div style="color:#fff;font-size:16px;font-weight:700;font-family:var(--serif);line-height:1">${sz.value}<span style="color:rgba(255,255,255,0.55);font-size:11px;margin-inline-start:5px;font-weight:400;font-family:var(--mono)">${sz.unit}</span></div>`
-             + `<div style="color:rgba(255,255,255,0.55);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:4px">${pctStr}% ${escapeHtml(I18N[LANG].usageOfTotal)}</div>`;
+        const mute = t.tooltipInkMute;
+        const ink = t.tooltipInk;
+        return `<div style="color:${mute};font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${escapeHtml(when)}</div>`
+             + `<div style="color:${ink};font-size:16px;font-weight:700;font-family:var(--serif);line-height:1">${sz.value}<span style="color:${mute};font-size:11px;margin-inline-start:5px;font-weight:400;font-family:var(--mono)">${sz.unit}</span></div>`
+             + `<div style="color:${mute};font-size:11px;text-transform:uppercase;letter-spacing:.06em;margin-top:4px">${pctStr}% ${escapeHtml(I18N[LANG].usageOfTotal)}</div>`;
       }
     },
     xAxis: {
@@ -2622,78 +2650,71 @@ function _usageOption(aggregated, period, total) {
       axisPointer: {
         value: initialPointerValue,
         snap: true,
-        lineStyle: { color: pointerColor, width: 2 },
+        // Pointer uses the same accent as the line — one color, not three.
+        lineStyle: { color: t.accent, width: 1 },
         label: {
           show: true,
           formatter: (params) => fmtBucketLabel(new Date(params.value), period, true),
-          backgroundColor: pointerColor,
-          color: '#fff',
+          backgroundColor: t.accent,
+          color: t.surface,        // ink-on-accent — high contrast
           fontFamily: 'var(--mono)',
-          fontSize: 10,
+          fontSize: 11,
           padding: [4, 8]
         },
         handle: {
           show: true,
-          color: pointerColor,
-          size: 30,
-          margin: 36
+          color: t.accent,
+          // 44px hits the WCAG mobile touch-target floor; the previous
+          // 30px was undersized for an active scrub control.
+          size: 44,
+          margin: 32
         }
       },
       splitLine: { show: false },
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: 'rgba(255,255,255,0.55)',
+        color: t.axisInk,
         fontFamily: 'var(--mono)',
-        fontSize: 10,
+        fontSize: 11,
         hideOverlap: true,
         formatter: (val) => fmtBucketLabel(new Date(val), period)
       }
     },
     yAxis: {
       type: 'value',
-      axisTick: { inside: true, lineStyle: { color: 'rgba(255,255,255,0.15)' } },
+      axisTick: { inside: true, lineStyle: { color: t.axisTick } },
       splitLine: { show: false },
       axisLine: { show: false },
       axisLabel: {
         inside: true,
-        color: 'rgba(255,255,255,0.45)',
+        color: t.axisInk,
         fontFamily: 'var(--mono)',
-        fontSize: 10,
+        fontSize: 11,
         formatter: (val) => { const s = fmtSize(val); return `${s.value}${s.unit}\n`; }
       },
       z: 10
     },
-    grid: { top: 24, left: 8, right: 8, bottom: 42 },
+    // grid uses spacing tokens: top --s-3 (12), left/right --s-2 (8), bottom --s-6 (32)
+    grid: { top: 12, left: 8, right: 8, bottom: 32 },
     dataZoom: [{ type: 'inside', throttle: 50 }],
+    ...anim,
     series: [{
       name: I18N[LANG].usage || 'Usage',
       type: 'line',
       smooth: true,
       showSymbol: true,
       symbol: 'circle',
-      symbolSize: 7,
+      // Smaller, borderless symbols — the line is the figure, not the
+      // dots. The previous 7px with a white border and an emphasis-glow
+      // shadow was Apple-iconography masquerading as a chart.
+      symbolSize: 4,
       sampling: 'average',
-      itemStyle: { color: lineColor, borderColor: '#fff', borderWidth: 1.5 },
-      emphasis: {
-        scale: 1.6,
-        itemStyle: {
-          color: lineColor,
-          borderColor: '#fff',
-          borderWidth: 2,
-          shadowColor: 'rgba(7,112,255,0.6)',
-          shadowBlur: 10
-        }
-      },
-      areaStyle: {
-        color: {
-          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
-          colorStops: [
-            { offset: 0, color: areaTop },
-            { offset: 1, color: areaBottom }
-          ]
-        }
-      },
+      itemStyle: { color: t.accent },
+      lineStyle: { color: t.accent, width: 2 },
+      // Flat single-color fill at low alpha — communicates "area under
+      // the curve" without resorting to a 2-stop gradient.
+      areaStyle: { color: _withAlpha(t.accent, 0.15) },
       data: seriesData
     }]
   };
@@ -2705,8 +2726,21 @@ function _usageEmpty(msg) {
   wrap.innerHTML = `<div class="usage-empty">${escapeHtml(msg)}</div>`;
 }
 
+// Skeleton paint while the period fetch + ECharts load are in flight.
+// Reuses the .skeleton CSS authored for the v1.6 redesign (its shimmer
+// is already gated on prefers-reduced-motion).
+function _usageSkeleton() {
+  const wrap = $('#usageChartWrap');
+  if (_usageChart) { _usageChart.dispose(); _usageChart = null; }
+  wrap.innerHTML = `<div class="skeleton" style="height:160px"></div>`;
+}
+
 async function renderUsageStats() {
   $('#usagePeriodLabel').textContent = I18N[LANG]['usagePeriod_' + CURRENT_USAGE_PERIOD];
+
+  // Show a skeleton block immediately so the user sees a real loading
+  // signal instead of an empty box while ECharts + fetch resolve.
+  _usageSkeleton();
 
   // Lazy-load ECharts on first need. If the library never loads, fall back
   // to the empty state — the rest of the page still works.
