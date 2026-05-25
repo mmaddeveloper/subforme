@@ -749,17 +749,6 @@ body::before {
 .usage-chart-wrap.pg-nopeak .usage-peakval { display: none; }
 @keyframes usage-pop { to { opacity: 1; } }
 
-/* average: thin solid line + flush-end square tag */
-.usage-avg { position: absolute; inset-inline: 0; z-index: 3; border-top: 1px solid color-mix(in srgb, var(--ink-2) 50%, transparent); pointer-events: none; opacity: 0; animation: usage-fade .5s ease .4s forwards; }
-.usage-avg-tag {
-  position: absolute; inset-inline-end: 2px; top: 50%; transform: translateY(-50%);
-  font-family: var(--mono); font-size: 8.5px; color: var(--ink-2);
-  background: var(--bg-2); border: 1px solid var(--line-2); padding: 1px 6px;
-  letter-spacing: .04em; white-space: nowrap;
-}
-[dir="rtl"] .usage-avg-tag { letter-spacing: 0; }
-[dir="rtl"] .usage-avg-tag { direction: rtl; }
-.usage-chart-wrap.pg-noavg .usage-avg { display: none; }
 @keyframes usage-fade { to { opacity: 1; } }
 
 /* x axis: aligned under the field (offset by gutter), chronological L->R */
@@ -1568,7 +1557,6 @@ const I18N = {
     usagePeriod_day: "۲۴ ساعت گذشته",
     usagePeriod_week: "۷ روز گذشته",
     usagePeriod_month: "۳۰ روز گذشته",
-    usageAvg: "میانگین",
     usagePeak: "اوج",
     usageOfTotal: "از کل",
     noUsageYet: "هنوز مصرفی ثبت نشده",
@@ -1619,7 +1607,6 @@ const I18N = {
     usagePeriod_day: "last 24 hours",
     usagePeriod_week: "last 7 days",
     usagePeriod_month: "last 30 days",
-    usageAvg: "avg",
     usagePeak: "peak",
     usageOfTotal: "of total",
     noUsageYet: "no usage recorded yet",
@@ -2374,8 +2361,6 @@ function renderUsageChart(data, period) {
 
   const max = Math.max(...data.map(d => d.v), 1);
   const peakIdx = data.reduce((best, d, i) => d.v > data[best].v ? i : best, 0);
-  const nonZero = data.filter(d => d.v > 0);
-  const avg = nonZero.length ? nonZero.reduce((s, d) => s + d.v, 0) / nonZero.length : 0;
   const total = data.reduce((s, d) => s + d.v, 0);
 
   const scale = niceScale(max);
@@ -2411,13 +2396,6 @@ function renderUsageChart(data, period) {
     axis.push(`<span>${lab}</span>`);
   }
 
-  const avgPct = avg > 0 ? Math.min((avg / scaleMax) * 100, 100) : 0;
-  const a = fmtSize(avg);
-  const showAvg = avg > 0 && nonZero.length > 1 && avgPct < 92;
-  const avgEl = showAvg
-    ? `<div class="usage-avg" style="bottom:${avgPct.toFixed(2)}%"><span class="usage-avg-tag">${escapeHtml(I18N[LANG].usageAvg)} ${a.value}${a.unit}</span></div>`
-    : '';
-
   wrap.innerHTML = `
     <div class="usage-plot">
       <div class="usage-yaxis">${yaxis}</div>
@@ -2425,7 +2403,6 @@ function renderUsageChart(data, period) {
         ${grid}
         <div class="usage-base"></div>
         <div class="usage-bars">${bars}</div>
-        ${avgEl}
       </div>
     </div>
     <div class="usage-axis">${axis.join('')}</div>
