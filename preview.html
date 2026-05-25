@@ -343,6 +343,14 @@ body::before {
   font-size: 24px; font-weight: 700; letter-spacing: -0.03em; line-height: 1;
 }
 .ring-pct .sm { font-size: 13px; color: var(--ink-2); }
+.ring-gauge {
+  position: absolute; inset: 0;
+  /* hidden until ECharts initialises and the parent gets `.with-gauge`
+     applied; that way nothing flashes if the library never loads. */
+  opacity: 0; transition: opacity .35s ease;
+}
+.ring-wrap.with-gauge .ring { opacity: 0; }
+.ring-wrap.with-gauge .ring-gauge { opacity: 1; }
 
 /* =========================================================
    QUICK STATS (3 tiles)
@@ -625,6 +633,12 @@ body::before {
   letter-spacing: 0.02em;
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
+.device-spark {
+  width: 100%;
+  height: 22px;
+  margin-top: 6px;
+}
+.device-spark:empty { display: none; }
 .device-meta .ip {
   color: var(--ink-2);
 }
@@ -1219,12 +1233,15 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
           <span id="usedUnit">GB</span> <span class="of" data-i18n="usedOf">USED OF</span> <span id="totalUnit">∞</span>
         </div>
       </div>
-      <div class="ring-wrap">
+      <div class="ring-wrap" id="ringWrap">
+        <!-- conic-gradient ring: shown as a fallback while/if ECharts can't
+             load. The ECharts gauge overlays this once available. -->
         <div class="ring" id="ringEl">
           <div class="ring-content">
             <div class="ring-pct"><span id="ringPctNum">0</span><span class="sm">%</span></div>
           </div>
         </div>
+        <div class="ring-gauge" id="ringGauge"></div>
       </div>
     </div>
   </section>
@@ -1833,6 +1850,8 @@ function renderUsage() {
   $('#totalUnit').textContent = totalFmt ? `${totalFmt.value} ${totalFmt.unit}` : '∞';
 
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  // Conic-gradient fallback: animate immediately so the ring isn't blank
+  // for visitors whose ECharts blob never loads.
   setTimeout(() => { $('#ringEl').style.setProperty('--pct', pct); }, 200);
   setTimeout(() => {
     const ringNum = $('#ringPctNum');
@@ -1845,6 +1864,8 @@ function renderUsage() {
     }
     requestAnimationFrame(tick);
   }, 200);
+  // ECharts gauge overlay: fades in over the conic ring once ready.
+  renderRingGauge(used, total);
 
   const remEl = $('#remainVal');
   if (total > 0) {
@@ -2053,6 +2074,7 @@ function renderDevicesList() {
           ${d.current ? `<span class="badge-now">${t.thisDevice}</span>` : ''}
         </div>
         <div class="device-meta">${meta}</div>
+        <div class="device-spark" data-ip="${escapeHtml(d.ip || '')}"></div>
       </div>
       <div class="device-status ${d.online ? 'online' : ''}">
         <span class="pip"></span>
@@ -2066,7 +2088,13 @@ async function renderDevices() {
   // try live endpoint first, fall back to local UA
   const live = await fetchOnlineDevices();
   DEVICES_CACHE = (live && live.length) ? live : buildDevicesFromLocal();
+  if (live && live.length) recordIPHistory(live);
   renderDevicesList();
+  // Sparklines need ECharts + at least 2 history points per IP. Kicked
+  // off lazily so the first paint doesn't wait on the library.
+  if (live && live.length) {
+    loadECharts().then(renderDeviceSparklines).catch(() => {});
+  }
 
   // hide the "enable endpoint" note if we got live data
   const note = $('#devicesNote');
@@ -2075,6 +2103,25 @@ async function renderDevices() {
   } else {
     note.parentElement.style.display = '';
   }
+}
+
+// Background poll so the per-IP history builds up over time. Runs every
+// 60 s once the page has been open for the same; only triggers a render
+// when the live endpoint actually returned data, to avoid flashing the
+// fallback card. Gated by document visibility so a backgrounded tab
+// doesn't pile up requests.
+function startDevicesAutoPoll() {
+  setInterval(() => {
+    if (document.hidden) return;
+    if (!ONLINE_IPS_ENDPOINT) return;
+    fetchOnlineDevices().then(live => {
+      if (!live || !live.length) return;
+      DEVICES_CACHE = live;
+      recordIPHistory(live);
+      renderDevicesList();
+      loadECharts().then(renderDeviceSparklines).catch(() => {});
+    }).catch(() => {});
+  }, 60_000);
 }
 
 function refreshDevices() {
@@ -2330,6 +2377,125 @@ function _chartTheme() {
 }
 
 let _usageChart = null;
+let _ringGauge = null;
+
+// Per-IP usage history, populated by recordIPHistory() on each devices
+// fetch. Sparkline appears for IPs that have at least 2 data points; new
+// sessions therefore see a flat card and the line emerges over time.
+const IP_HISTORY = new Map();
+const IP_HISTORY_MAX = 30;
+function recordIPHistory(devices) {
+  const now = Date.now();
+  const seen = new Set();
+  for (const d of devices || []) {
+    if (!d || !d.ip) continue;
+    seen.add(d.ip);
+    if (!IP_HISTORY.has(d.ip)) IP_HISTORY.set(d.ip, []);
+    const h = IP_HISTORY.get(d.ip);
+    h.push({ t: now, n: d.connections || 0 });
+    while (h.length > IP_HISTORY_MAX) h.shift();
+  }
+  // Garbage-collect history for IPs that haven't been seen in a while
+  // (keep the map from growing unboundedly across a long-open session).
+  for (const ip of IP_HISTORY.keys()) {
+    if (!seen.has(ip) && IP_HISTORY.get(ip).length === 0) IP_HISTORY.delete(ip);
+  }
+}
+
+// Render the data-limit ring as an ECharts gauge once the library lands.
+// Until then the conic-gradient ring stays visible as a graceful fallback.
+async function renderRingGauge(used, total) {
+  const el = document.getElementById('ringGauge');
+  const wrap = document.getElementById('ringWrap');
+  if (!el || !wrap) return;
+  let echarts;
+  try { echarts = await loadECharts(); } catch { return; }
+  const t = _chartTheme();
+  if (!_ringGauge || _ringGauge.getDom() !== el) {
+    _ringGauge = echarts.init(el);
+    if (!_ringGauge._wired) {
+      window.addEventListener('resize', () => _ringGauge && _ringGauge.resize());
+      _ringGauge._wired = true;
+    }
+  }
+  const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
+  // For unlimited (no data_limit) we still show the gauge, just full of
+  // track. The center text shows ∞ instead of a percentage.
+  const isInf = total <= 0;
+  _ringGauge.setOption({
+    series: [{
+      type: 'gauge',
+      startAngle: 90,
+      endAngle: -270,
+      radius: '95%',
+      progress: {
+        show: !isInf,
+        width: 5,
+        roundCap: true,
+        itemStyle: { color: t.accent2 }
+      },
+      pointer: { show: false },
+      axisLine: { lineStyle: { width: 5, color: [[1, t.surface2]] } },
+      axisTick: { show: false },
+      splitLine: { show: false },
+      axisLabel: { show: false },
+      anchor: { show: false },
+      title: { show: false },
+      detail: {
+        valueAnimation: !isInf,
+        offsetCenter: [0, 0],
+        formatter: () => isInf ? '{inf|∞}' : `{n|${Math.round(pct)}}{sm|%}`,
+        rich: {
+          n:   { fontFamily: 'var(--serif)', fontSize: 24, fontWeight: 700, color: t.ink },
+          sm:  { fontFamily: 'var(--serif)', fontSize: 13, color: t.ink },
+          inf: { fontFamily: 'var(--serif)', fontSize: 28, fontWeight: 700, color: t.ink },
+        }
+      },
+      data: [{ value: isInf ? 100 : pct }]
+    }],
+    animationDuration: 1400,
+    animationEasing: 'cubicOut'
+  }, true);
+  wrap.classList.add('with-gauge');
+}
+
+// Tiny line chart of recent connection counts per IP. Called after every
+// renderDevicesList(); skipped silently when ECharts hasn't loaded yet
+// or the IP has less than 2 history points.
+function renderDeviceSparklines() {
+  if (!window.echarts) return;
+  const t = _chartTheme();
+  document.querySelectorAll('.device-spark[data-ip]').forEach(el => {
+    const ip = el.dataset.ip;
+    const hist = ip ? IP_HISTORY.get(ip) : null;
+    if (!hist || hist.length < 2) {
+      // Dispose any orphaned ECharts instance attached to this DOM so a
+      // re-render doesn't pile them up; the empty placeholder collapses
+      // via the `:empty` CSS rule.
+      const stale = echarts.getInstanceByDom(el);
+      if (stale) stale.dispose();
+      el.innerHTML = '';
+      return;
+    }
+    let chart = echarts.getInstanceByDom(el) || echarts.init(el);
+    chart.setOption({
+      animation: false,
+      grid: { left: 0, right: 0, top: 1, bottom: 1 },
+      xAxis: { type: 'time', show: false, boundaryGap: false },
+      yAxis: { type: 'value', show: false, min: 0 },
+      series: [{
+        type: 'line',
+        data: hist.map(h => [h.t, h.n]),
+        smooth: true,
+        symbol: 'none',
+        lineStyle: { color: t.accent, width: 1.4 },
+        areaStyle: { color: t.accent, opacity: 0.18 }
+      }],
+      tooltip: { show: false }
+    }, { notMerge: true });
+  });
+}
+
 
 function _usageOption(aggregated, period, total) {
   const t = _chartTheme();
@@ -2632,6 +2798,7 @@ renderConfigs();
 renderSupport();
 initUsageStatsTabs();
 renderUsageStats();
+startDevicesAutoPoll();
 
 // If the panel didn't include `user.links` in the HTML render
 // (PasarGuard/Marzban often hold raw configs back from browsers and
