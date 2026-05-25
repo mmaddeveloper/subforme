@@ -2411,11 +2411,12 @@ function recordIPHistory(devices) {
   }
 }
 
-// Render the data-limit ring as the ECharts "custom-gauge" demo (clipped
-// panel image rotating with the value). Until ECharts lands the
-// conic-gradient ring stays as a graceful fallback.
-//
-// Demo source: https://echarts.apache.org/examples/en/editor.html?c=custom-gauge
+// Data-limit gauge — visual language borrowed from the ECharts
+// "custom-gauge" demo (gradient arc + polygon pointer + white center
+// with shadow + big % text), but rebuilt from theme-colored shapes so
+// it works without an external image dependency. The demo's panel PNG
+// is intentionally avoided: any missing asset on the bridge would
+// leave the ring blank.
 async function renderRingGauge(used, total) {
   const el = document.getElementById('ringGauge');
   const wrap = document.getElementById('ringWrap');
@@ -2429,87 +2430,103 @@ async function renderRingGauge(used, total) {
       _ringGauge._wired = true;
     }
   }
-  // The panel image lives next to echarts.min.js on the bridge static dir.
-  const panelUrl = (ECHARTS_URL || '').replace(/echarts\.min\.js$/, 'custom-gauge-panel.png');
   const t = _chartTheme();
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   const isInf = total <= 0;
   // Display value: percentage 0..100 (or 100 for unlimited so the ring is full).
   const dataVal = isInf ? 100 : pct;
   const valOnRadianMax = 100;
-  // The container is 100px square; scale the demo's 200/170/40/140 radii down.
-  const outer = 48, inner = 40, pointerInner = 8, insidePanel = 32;
+  // Pixel offsets from the polar center for our shapes. The container
+  // is 100px square; the polar coordSys is centered at (50, 50).
+  const outerR = 46, innerR = 38, pointerR = 36, pointerBaseR = 6, centerR = 30;
 
-  function convertToPolarPoint(params, radius, radian) {
+  function polarPoint(params, radius, radian) {
     return [
       Math.cos(radian) * radius + params.coordSys.cx,
       -Math.sin(radian) * radius + params.coordSys.cy
     ];
   }
-  function makePointerPoints(params, polarEndRadian) {
-    return [
-      convertToPolarPoint(params, outer, polarEndRadian),
-      convertToPolarPoint(params, outer, polarEndRadian + Math.PI * 0.03),
-      convertToPolarPoint(params, pointerInner, polarEndRadian)
-    ];
+  function pointerPoints(params, polarEndRadian) {
+    // Triangle: tip near the inside of the arc, base on the opposite
+    // side of the center (so it reads as a needle, not a wedge).
+    const tip   = polarPoint(params, pointerR, polarEndRadian);
+    const left  = polarPoint(params, pointerBaseR, polarEndRadian + Math.PI / 2);
+    const right = polarPoint(params, pointerBaseR, polarEndRadian - Math.PI / 2);
+    return [tip, left, right];
   }
   function makeText(val) {
     if (isInf) return '∞';
     return ((val / valOnRadianMax) * 100).toFixed(0) + '%';
   }
+  const arcGradient = {
+    type: 'linear', x: 0, y: 0, x2: 1, y2: 1,
+    colorStops: [
+      { offset: 0, color: t.accent },
+      { offset: 1, color: t.accent2 }
+    ]
+  };
+
   function renderItem(params, api) {
     const valOnRadian = api.value(1);
     const coords = api.coord([api.value(0), valOnRadian]);
     const polarEndRadian = coords[3];
-    const imageStyle = {
-      image: panelUrl,
-      x: params.coordSys.cx - outer,
-      y: params.coordSys.cy - outer,
-      width: outer * 2,
-      height: outer * 2
-    };
     return {
       type: 'group',
       children: [
+        // Background track — full ring at low alpha.
         {
-          type: 'image', style: imageStyle,
-          clipPath: {
-            type: 'sector',
-            shape: {
-              cx: params.coordSys.cx, cy: params.coordSys.cy,
-              r: outer, r0: inner,
-              startAngle: 0, endAngle: -polarEndRadian,
-              transition: 'endAngle', enterFrom: { endAngle: 0 }
-            }
+          type: 'sector',
+          shape: {
+            cx: params.coordSys.cx, cy: params.coordSys.cy,
+            r: outerR, r0: innerR,
+            startAngle: 0, endAngle: Math.PI * 2
+          },
+          style: { fill: _withAlpha(t.ink, 0.08) },
+          silent: true
+        },
+        // Filled arc (the "progress"). startAngle/endAngle are in
+        // canvas radians; ECharts polar uses negative-Y up, so we
+        // sweep from 0 down to -polarEndRadian.
+        {
+          type: 'sector',
+          shape: {
+            cx: params.coordSys.cx, cy: params.coordSys.cy,
+            r: outerR, r0: innerR,
+            startAngle: 0, endAngle: -polarEndRadian, clockwise: false,
+            transition: 'endAngle', enterFrom: { endAngle: 0 }
+          },
+          style: {
+            fill: arcGradient,
+            shadowColor: _withAlpha(t.accent2, 0.45),
+            shadowBlur: 10
           }
         },
+        // Triangular needle pointer. Solid accent2 so it reads against
+        // the gradient arc and the white center.
         {
-          type: 'image', style: imageStyle,
-          clipPath: {
-            type: 'polygon',
-            shape: { points: makePointerPoints(params, polarEndRadian) },
-            extra: {
-              polarEndRadian: polarEndRadian,
-              transition: 'polarEndRadian',
-              enterFrom: { polarEndRadian: 0 }
-            },
-            during: function (apiDuring) {
-              apiDuring.setShape(
-                'points',
-                makePointerPoints(params, apiDuring.getExtra('polarEndRadian'))
-              );
-            }
-          }
+          type: 'polygon',
+          shape: { points: pointerPoints(params, polarEndRadian) },
+          extra: {
+            polarEndRadian: polarEndRadian,
+            transition: 'polarEndRadian',
+            enterFrom: { polarEndRadian: 0 }
+          },
+          during: (apiDuring) => {
+            apiDuring.setShape('points', pointerPoints(params, apiDuring.getExtra('polarEndRadian')));
+          },
+          style: { fill: t.accent2 }
         },
+        // Inside white plate with the demo's blueish drop shadow.
         {
           type: 'circle',
-          shape: { cx: params.coordSys.cx, cy: params.coordSys.cy, r: insidePanel },
+          shape: { cx: params.coordSys.cx, cy: params.coordSys.cy, r: centerR },
           style: {
-            fill: '#fff',
-            shadowBlur: 18,
-            shadowColor: 'rgba(76,107,167,0.4)'
+            fill: t.surface || '#fff',
+            shadowBlur: 16,
+            shadowColor: 'rgba(76, 107, 167, 0.35)'
           }
         },
+        // Big % text — animates from 0 on enter and during updates.
         {
           type: 'text',
           extra: {
@@ -2519,16 +2536,16 @@ async function renderRingGauge(used, total) {
           },
           style: {
             text: makeText(valOnRadian),
-            fontSize: 18,
+            fontSize: 20,
             fontWeight: 700,
             fontFamily: 'var(--serif)',
             x: params.coordSys.cx,
             y: params.coordSys.cy,
-            fill: 'rgb(0,50,190)',
+            fill: t.ink,
             align: 'center', verticalAlign: 'middle',
             enterFrom: { opacity: 0 }
           },
-          during: function (apiDuring) {
+          during: (apiDuring) => {
             apiDuring.setStyle('text', makeText(apiDuring.getExtra('valOnRadian')));
           }
         }
@@ -2544,9 +2561,9 @@ async function renderRingGauge(used, total) {
     animationEasingUpdate: 'quarticInOut',
     dataset: { source: [[1, dataVal]] },
     tooltip: { show: false },
-    angleAxis: { type: 'value', startAngle: 0, show: false, min: 0, max: valOnRadianMax },
+    angleAxis: { type: 'value', startAngle: 0, show: false, min: 0, max: valOnRadianMax, clockwise: false },
     radiusAxis: { type: 'value', show: false },
-    polar: {},
+    polar: { radius: '95%' },
     series: [{ type: 'custom', coordinateSystem: 'polar', renderItem: renderItem }]
   }, true);
   wrap.classList.add('with-gauge');
@@ -2654,8 +2671,14 @@ function _usageOption(aggregated, period, total) {
   return {
     title: { show: false },
     tooltip: {
-      triggerOn: 'none',
-      position: (pt) => [pt[0], 50],
+      // The demo uses triggerOn:'none' with a fixed-y position so the
+      // tooltip only follows the handle — but that defeats tap-to-read
+      // on mobile. Default trigger lets the tooltip pop up wherever the
+      // user actually tapped/hovered, and the axisPointer below still
+      // provides the snap handle for scrubbing.
+      trigger: 'axis',
+      triggerOn: 'mousemove|click',
+      confine: true,
       backgroundColor: 'rgba(15, 16, 22, 0.92)',
       borderColor: 'rgba(255,255,255,0.08)',
       borderWidth: 1,
@@ -2727,10 +2750,21 @@ function _usageOption(aggregated, period, total) {
       name: I18N[LANG].usage || 'Usage',
       type: 'line',
       smooth: true,
+      showSymbol: true,
       symbol: 'circle',
-      symbolSize: 5,
+      symbolSize: 7,
       sampling: 'average',
-      itemStyle: { color: lineColor },
+      itemStyle: { color: lineColor, borderColor: '#fff', borderWidth: 1.5 },
+      emphasis: {
+        scale: 1.6,
+        itemStyle: {
+          color: lineColor,
+          borderColor: '#fff',
+          borderWidth: 2,
+          shadowColor: 'rgba(7,112,255,0.6)',
+          shadowBlur: 10
+        }
+      },
       areaStyle: {
         color: {
           type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
