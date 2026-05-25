@@ -691,96 +691,125 @@ body::before {
 .usage-total { font-family: var(--serif); white-space: nowrap; }
 .usage-total .num { font-size: 38px; font-weight: 700; line-height: 1; }
 .usage-total .unit { font-size: 14px; color: var(--ink-3); font-family: var(--mono); letter-spacing: 0.08em; margin-inline-start: 6px; }
+[dir="rtl"] .usage-total .unit { letter-spacing: 0; }
 .usage-period-label { font-family: var(--mono); font-size: 11px; color: var(--ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+[dir="rtl"] .usage-period-label { letter-spacing: 0; text-transform: none; }
+
 .usage-chart-wrap {
-  padding: 22px 16px 12px;
+  padding: 18px 16px 12px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 14px;
   position: relative;
-  /* deliberately NOT overflow:hidden — the tooltip and avg-line label
-     anchor on bars near the edges and need to extend past the wrap
-     padding without getting clipped. */
+  /* deliberately NOT overflow:hidden — the tooltip anchors on bars near
+     the edges and needs to extend past the wrap padding. */
 }
-.usage-yaxis {
-  position: absolute;
-  top: 10px; inset-inline-end: 14px;
-  font-family: var(--mono); font-size: 10px;
-  color: var(--ink-4);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  pointer-events: none;
-  opacity: 0.9;
-}
-.usage-yaxis .max { color: var(--ink-2); font-weight: 700; font-size: 11px; }
-.usage-chart {
-  display: flex;
-  align-items: stretch;        /* bars take full chart height so % heights resolve */
-  height: 170px;
-  gap: 4px;
+
+/* Plot area: gridlines sit behind, bars in front, all share one box so
+   bar %-heights and gridline %-positions line up on the same scale. */
+.usage-plot {
   position: relative;
+  height: 168px;
+  /* leave room on the inline-end edge so y-axis value labels don't sit
+     on top of the bars */
+  padding-inline-end: 4px;
+}
+.usage-gridline {
+  position: absolute;
+  inset-inline: 0;
+  border-top: 1px solid var(--line);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.usage-gridline.base { opacity: 1; border-top-color: var(--line-2); }
+.usage-gridlabel {
+  position: absolute;
+  inset-inline-end: 0;
+  top: -7px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-4);
+  background: var(--bg-2);
+  padding: 0 4px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+  line-height: 1.3;
+}
+[dir="rtl"] .usage-gridlabel { letter-spacing: 0; }
+
+.usage-chart {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;       /* bars grow up from the baseline */
+  gap: 5px;
+  z-index: 2;
 }
 .usage-bar {
-  flex: 1;
+  flex: 1 1 0;
   min-width: 0;
-  height: 100%;                /* explicit so child fill % heights work */
+  height: 100%;
   display: flex;
-  align-items: flex-end;        /* push fill to the bottom of the bar */
+  align-items: flex-end;
+  justify-content: center;     /* centre the capped-width fill in its slot */
   cursor: pointer;
   position: relative;
 }
 .usage-bar .fill {
   width: 100%;
-  background: linear-gradient(to top, var(--accent), color-mix(in srgb, var(--accent) 50%, transparent));
-  border-radius: 4px 4px 1px 1px;
+  max-width: 38px;             /* keeps day-view (few buckets) from ballooning */
+  background: linear-gradient(to top, var(--accent), color-mix(in srgb, var(--accent) 45%, transparent));
+  border-radius: 5px 5px 2px 2px;
   min-height: 3px;
   transition: filter 0.15s, transform 0.15s;
   transform-origin: bottom;
-  /* Animated grow-in from 0% — runs once on render */
   animation: usage-bar-grow 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .usage-bar:hover .fill,
-.usage-bar.active .fill { filter: brightness(1.25); transform: scaleY(1.04); }
+.usage-bar.active .fill { filter: brightness(1.2); }
 .usage-bar.zero .fill {
   background: var(--line-2);
-  opacity: 0.45;
+  opacity: 0.4;
   animation: none;
 }
 .usage-bar.peak .fill {
-  background: linear-gradient(to top, var(--accent-2, var(--accent)), color-mix(in srgb, var(--accent-2, var(--accent)) 70%, transparent));
-  filter: brightness(1.1);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-2, var(--accent)) 40%, transparent);
+  background: linear-gradient(to top, var(--accent-2, var(--accent)), color-mix(in srgb, var(--accent-2, var(--accent)) 55%, transparent));
 }
 @keyframes usage-bar-grow {
   from { transform: scaleY(0); opacity: 0.2; }
   to   { transform: scaleY(1); opacity: 1; }
 }
+
+/* Average reference line — dashed, with a solid pill label so the dashes
+   never run through the text (the old version's biggest eyesore). */
 .usage-avg-line {
   position: absolute;
-  left: 0; right: 0;
-  border-top: 1px dashed color-mix(in srgb, var(--ink-3) 60%, transparent);
+  inset-inline: 0;
+  border-top: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent);
   pointer-events: none;
+  z-index: 3;
   opacity: 0;
-  animation: usage-avg-fade 800ms ease 400ms forwards;
+  animation: usage-avg-fade 700ms ease 450ms forwards;
 }
-.usage-avg-line::after {
-  content: attr(data-label);
+.usage-avg-label {
   position: absolute;
-  /* anchor on the inline-start side so the avg label can never collide
-     with the y-axis peak indicator (which sits inline-end) */
   inset-inline-start: 0;
-  top: -7px;
-  font-family: var(--mono); font-size: 10px;
-  color: var(--ink-3);
-  letter-spacing: 0.04em;
-  background: var(--surface);
-  padding: 1px 6px;
-  border-radius: 4px;
-  line-height: 1.2;
+  top: -9px;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--accent);
+  background: var(--bg-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  padding: 1px 7px;
+  border-radius: 999px;
+  line-height: 1.4;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
 }
-@keyframes usage-avg-fade {
-  to { opacity: 1; }
-}
+[dir="rtl"] .usage-avg-label { letter-spacing: 0; }
+@keyframes usage-avg-fade { to { opacity: 1; } }
+
 .usage-refresh {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -789,7 +818,7 @@ body::before {
   display: grid; place-items: center;
   cursor: pointer;
   color: var(--ink-3);
-  margin-inline-start: auto;          /* push to the trailing edge of the row */
+  margin-inline-start: auto;
   flex-shrink: 0;
   transition: all 0.15s;
 }
@@ -807,41 +836,41 @@ body::before {
   50%      { opacity: 0.55; }
 }
 .usage-axis {
-  display: flex; justify-content: space-between;
-  margin-top: 12px;
+  display: flex;
+  margin-top: 10px;
   padding: 0 4px;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 10.5px;
   color: var(--ink-3);
-  letter-spacing: 0.04em;
   font-weight: 500;
 }
-.usage-axis span { flex: 0 0 auto; }
+[dir="rtl"] .usage-axis { letter-spacing: 0; }
 .usage-tooltip {
   position: absolute;
   background: var(--surface-2);
   border: 1px solid var(--line-2);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 9px 13px;
   font-family: var(--mono); font-size: 11px;
   pointer-events: none;
-  z-index: 10;
+  z-index: 20;
   white-space: nowrap;
   opacity: 0;
   transition: opacity 0.12s;
-  box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.4);
 }
 .usage-tooltip.show { opacity: 1; }
-.usage-tooltip .when { color: var(--ink-3); margin-bottom: 4px; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 500; }
+.usage-tooltip .when { color: var(--ink-3); margin-bottom: 4px; font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; font-weight: 500; }
+[dir="rtl"] .usage-tooltip .when { letter-spacing: 0; text-transform: none; }
 .usage-tooltip .what { color: var(--ink); font-weight: 700; font-size: 18px; font-family: var(--serif); }
 .usage-empty {
   display: flex; align-items: center; justify-content: center;
-  height: 170px;
+  height: 168px;
   font-family: var(--mono); font-size: 12px;
   color: var(--ink-3);
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
-
+[dir="rtl"] .usage-empty { letter-spacing: 0; }
 .devices-note {
   margin-top: 10px;
   padding: 10px 14px;
@@ -2431,59 +2460,69 @@ function renderUsageChart(data, period) {
   const max = Math.max(...data.map(d => d.v), 1);
   const peakIdx = data.reduce((best, d, i) => d.v > data[best].v ? i : best, 0);
   // Average only over buckets that had some traffic — averaging across 30
-  // days when the user only had usage for 3 of them makes the "avg" line
-  // ride the floor and feel useless.
+  // days when the user only had usage on 3 of them makes the avg ride the
+  // floor and feel useless.
   const nonZero = data.filter(d => d.v > 0);
   const avg = nonZero.length ? nonZero.reduce((s, d) => s + d.v, 0) / nonZero.length : 0;
   const total = data.reduce((s, d) => s + d.v, 0);
 
+  // Build a "nice" y-scale: gridlines land on round numbers *in the unit
+  // they're displayed in* (1.5 GB, 3 GB…). Computing the step in the display
+  // unit (1024-based, like fmtSize) avoids the old base-10 mismatch that
+  // produced ugly labels like 1.55 GB. All bar heights & gridlines share
+  // this single scale so they line up exactly.
+  const scale = niceScale(max);
+  const scaleMax = scale.maxBytes;
+
+  // Gridlines at each round step + a solid baseline. Labels are pinned to
+  // the trailing edge with a solid pill so nothing bleeds through them.
+  const grid = total > 0 ? scale.lines.map(ln => {
+    const frac = ln.bytes / scaleMax;
+    return `<div class="usage-gridline" style="bottom:${(frac * 100).toFixed(2)}%">
+        <span class="usage-gridlabel">${ln.label}${scale.unit}</span>
+      </div>`;
+  }).join('') : '';
+  const baseline = `<div class="usage-gridline base" style="bottom:0"></div>`;
+
   const bars = data.map((d, i) => {
-    const pct = max > 0 ? Math.max((d.v / max) * 100, 1) : 0;
+    const pct = d.v > 0 ? Math.max((d.v / scaleMax) * 100, 1.5) : 0;
     const zeroCls = d.v === 0 ? ' zero' : '';
     const peakCls = (i === peakIdx && d.v > 0) ? ' peak' : '';
-    // Stagger the grow-in animation so bars cascade in, looks alive
-    const delayMs = Math.min(i * 18, 350);
+    const delayMs = Math.min(i * 16, 320);
     return `<div class="usage-bar${zeroCls}${peakCls}" data-i="${i}">
       <div class="fill" style="height:${pct.toFixed(2)}%; animation-delay:${delayMs}ms"></div>
     </div>`;
   }).join('');
 
-  // Axis labels: pick a handful of evenly-spaced indices and align each
-  // label to the *center* of its bar by injecting placeholder spans for
-  // the unused positions. That keeps "00 · 06 · 12 · 18 · 23" actually
-  // sitting under the right hour, instead of bunched on the SVG baseline.
+  // X-axis labels: evenly-spaced, each centred under its bar via a flex
+  // cell that mirrors the bar layout.
   const n = data.length;
   const labelEvery = period === 'day' ? Math.max(1, Math.floor(n / 5)) :
                      period === 'week' ? 1 : Math.max(1, Math.floor(n / 6));
   const axisCells = [];
   for (let i = 0; i < n; i++) {
     const shouldLabel = i === 0 || i === n - 1 || i % labelEvery === 0;
-    axisCells.push(`<span style="flex:1;text-align:center;">${shouldLabel ? escapeHtml(fmtBucketLabel(data[i].t, period)) : ''}</span>`);
+    axisCells.push(`<span style="flex:1 1 0;min-width:0;text-align:center;">${shouldLabel ? escapeHtml(fmtBucketLabel(data[i].t, period)) : ''}</span>`);
   }
 
-  // Average line positioned by % of chart height (bottom: %). Suppress when
-  // there's only one bucket with traffic (avg == peak, so the line would
-  // ride exactly on top of the peak bar and the labels would collide), and
-  // when avg is so close to peak that the two labels would overlap visually.
-  const avgPct = avg > 0 ? Math.min((avg / max) * 100, 100) : 0;
+  // Average line, positioned on the same scale. Suppress when there's only
+  // one bucket with traffic (avg == peak) or when it would sit right at the
+  // ceiling and collide with the top gridline label.
+  const avgPct = avg > 0 ? Math.min((avg / scaleMax) * 100, 100) : 0;
   const avgSize = fmtSize(avg);
-  const showAvgLine = avg > 0 && nonZero.length > 1 && avgPct < 92;
-  const avgLineLabel = `${I18N[LANG].usageAvg} · ${avgSize.value}${avgSize.unit}`;
+  const showAvgLine = avg > 0 && nonZero.length > 1 && avgPct < 95;
+  const avgLineLabel = `${I18N[LANG].usageAvg} ${avgSize.value}${avgSize.unit}`;
   const avgLine = showAvgLine
-    ? `<div class="usage-avg-line" style="bottom:${avgPct.toFixed(2)}%" data-label="${escapeHtml(avgLineLabel)}"></div>`
-    : '';
-
-  // Y-axis hint: just the peak value, top-trailing corner. Skip entirely
-  // when nothing happened — "1 B peak" on an all-zero chart is misleading.
-  const maxSize = fmtSize(max);
-  const yAxis = total > 0
-    ? `<div class="usage-yaxis"><span class="max">${maxSize.value}${maxSize.unit}</span> ${escapeHtml(I18N[LANG].usagePeak)}</div>`
+    ? `<div class="usage-avg-line" style="bottom:${avgPct.toFixed(2)}%">
+         <span class="usage-avg-label">${escapeHtml(avgLineLabel)}</span>
+       </div>`
     : '';
 
   wrap.innerHTML = `
-    ${yAxis}
-    <div class="usage-chart">
-      ${bars}
+    <div class="usage-plot">
+      ${grid}
+      ${baseline}
+      <div class="usage-chart">${bars}</div>
       ${avgLine}
     </div>
     <div class="usage-axis">${axisCells.join('')}</div>
@@ -2528,6 +2567,28 @@ function renderUsageChart(data, period) {
   document.addEventListener('click', _usageDismissTip, { capture: true });
 }
 
+// Build a readable y-scale for a byte value. Works in the same 1024-based
+// display unit fmtSize uses, picks a round step (1 / 2 / 2.5 / 5 / 10 × 10^n)
+// aiming for ~3 gridlines, and returns the gridline values both in bytes
+// (for positioning) and as pre-formatted labels (for display).
+function niceScale(maxBytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0, n = maxBytes > 0 ? maxBytes : 1;
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+  const div = Math.pow(1024, i);            // bytes per display unit
+  const rough = n / 3;                      // target ~3 lines
+  const exp = Math.floor(Math.log10(rough || 1));
+  const b = Math.pow(10, exp);
+  const f = (rough || 1) / b;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * b; // display units
+  const topUnit = Math.ceil(n / step) * step;
+  const lines = [];
+  for (let v = step; v <= topUnit + step * 1e-9; v += step) {
+    lines.push({ bytes: v * div, label: (Math.round(v * 100) / 100).toString() });
+  }
+  return { maxBytes: topUnit * div, unit: units[i], lines };
+}
+
 function renderUsageSkeleton(period) {
   // Dim pulsing placeholder while we wait for the real fetch. Match the
   // bar count to what the real chart will render so swapping skeleton -> data
@@ -2535,11 +2596,14 @@ function renderUsageSkeleton(period) {
   const count = period === 'day' ? 24 : period === 'week' ? 7 : 30;
   const wrap = $('#usageChartWrap');
   const bars = Array.from({ length: count }, (_, i) => {
-    const h = 20 + ((Math.sin(i * 1.3) + 1) * 25); // pseudo-random heights
+    const h = 20 + ((Math.sin(i * 1.3) + 1) * 25);
     return `<div class="usage-bar loading"><div class="fill" style="height:${h.toFixed(1)}%; animation-delay:${i * 80}ms"></div></div>`;
   }).join('');
   wrap.innerHTML = `
-    <div class="usage-chart">${bars}</div>
+    <div class="usage-plot">
+      <div class="usage-gridline base" style="bottom:0"></div>
+      <div class="usage-chart">${bars}</div>
+    </div>
     <div class="usage-axis"></div>
     <div class="usage-tooltip" id="usageTooltip"></div>
   `;
