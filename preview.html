@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" data-theme="midnight">
+<html lang="fa" dir="rtl">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<meta name="theme-color" content="#0a0a0f" />
+<meta name="theme-color" content="#fafafa" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0a0a0f" media="(prefers-color-scheme: dark)" />
 <title>Plus Collection</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,126 +13,102 @@
 
 <style>
 /* =========================================================
-   THEMES — 4 distinct vibes
+   DESIGN TOKENS — light default, midnight as user override
+   v1.6 redesign per Dieter Rams audit: cap 6 type sizes,
+   6 spacing steps, 12 functional colors + 1 accent.
    ========================================================= */
-[data-theme="midnight"] {
-  --bg: #0a0a0f;
-  --bg-2: #11111a;
-  --surface: rgba(255, 255, 255, 0.04);
-  --surface-2: rgba(255, 255, 255, 0.06);
-  --ink: #f5f5f7;
-  --ink-2: #a8a8b3;
-  --ink-3: #6a6a78;
-  --ink-4: #3a3a45;
-  --line: #1f1f2a;
-  --line-2: #2f2f3d;
-  --accent: #7c5cff;
-  --accent-2: #5eead4;
-  --accent-3: #f472b6;
-  --accent-glow: rgba(124, 92, 255, 0.25);
-  --warn: #ffb800;
-  --danger: #ff5e6c;
-  --good: #5eead4;
-  --aurora-1: radial-gradient(circle, rgba(124, 92, 255, 0.35), transparent 70%);
-  --aurora-2: radial-gradient(circle, rgba(94, 234, 212, 0.20), transparent 70%);
-  --aurora-3: radial-gradient(circle, rgba(244, 114, 182, 0.15), transparent 70%);
-}
-[data-theme="gold"] {
-  --bg: #0a0805;
-  --bg-2: #14110b;
-  --surface: rgba(255, 215, 130, 0.04);
-  --surface-2: rgba(255, 215, 130, 0.07);
-  --ink: #faf6ed;
-  --ink-2: #b8a883;
-  --ink-3: #786a4d;
-  --ink-4: #3a3525;
-  --line: #2a2417;
-  --line-2: #3d3520;
-  --accent: #d4af37;
-  --accent-2: #f4d35e;
-  --accent-3: #b8860b;
-  --accent-glow: rgba(212, 175, 55, 0.3);
-  --warn: #ff9500;
-  --danger: #ff5e6c;
-  --good: #d4af37;
-  --aurora-1: radial-gradient(circle, rgba(212, 175, 55, 0.35), transparent 70%);
-  --aurora-2: radial-gradient(circle, rgba(244, 211, 94, 0.20), transparent 70%);
-  --aurora-3: radial-gradient(circle, rgba(184, 134, 11, 0.18), transparent 70%);
-}
-[data-theme="emerald"] {
-  --bg: #050c08;
-  --bg-2: #0a1410;
-  --surface: rgba(120, 255, 180, 0.04);
-  --surface-2: rgba(120, 255, 180, 0.07);
-  --ink: #f0fff4;
-  --ink-2: #8db5a0;
-  --ink-3: #4d7560;
-  --ink-4: #253a30;
-  --line: #15281e;
-  --line-2: #20382a;
-  --accent: #10b981;
-  --accent-2: #6ee7b7;
-  --accent-3: #34d399;
-  --accent-glow: rgba(16, 185, 129, 0.3);
-  --warn: #ffb800;
-  --danger: #ff5e6c;
-  --good: #10b981;
-  --aurora-1: radial-gradient(circle, rgba(16, 185, 129, 0.35), transparent 70%);
-  --aurora-2: radial-gradient(circle, rgba(110, 231, 183, 0.20), transparent 70%);
-  --aurora-3: radial-gradient(circle, rgba(52, 211, 153, 0.18), transparent 70%);
-}
-[data-theme="crimson"] {
-  --bg: #0a0507;
-  --bg-2: #14080c;
-  --surface: rgba(255, 100, 130, 0.04);
-  --surface-2: rgba(255, 100, 130, 0.07);
-  --ink: #fff5f6;
-  --ink-2: #b89098;
-  --ink-3: #785058;
-  --ink-4: #3a262b;
-  --line: #28161c;
-  --line-2: #3a2028;
-  --accent: #ef4444;
-  --accent-2: #fb7185;
-  --accent-3: #f43f5e;
-  --accent-glow: rgba(239, 68, 68, 0.3);
-  --warn: #ffb800;
-  --danger: #ff5e6c;
-  --good: #10b981;
-  --aurora-1: radial-gradient(circle, rgba(239, 68, 68, 0.35), transparent 70%);
-  --aurora-2: radial-gradient(circle, rgba(251, 113, 133, 0.20), transparent 70%);
-  --aurora-3: radial-gradient(circle, rgba(244, 63, 94, 0.18), transparent 70%);
-}
-
 :root {
+  /* Type scale */
+  --t-xs: 12px; --t-sm: 14px; --t-md: 16px; --t-lg: 20px; --t-xl: 28px; --t-xxl: 40px;
+  /* Spacing scale (4-base) */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px; --s-6: 32px;
+  /* Radii */
+  --r-sm: 6px; --r-md: 10px; --r-lg: 16px;
+  /* Type families */
   --serif: 'Bricolage Grotesque', 'Vazirmatn', serif;
   --sans: 'Vazirmatn', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Functional colors — light theme (daylight default) */
+  --bg: #fafafa;
+  --bg-2: #f5f5f7;
+  --surface: #ffffff;
+  --surface-2: #f5f5f5;
+  --line: #e4e4e7;
+  --line-2: #d4d4d8;
+  --ink: #18181b;
+  --ink-2: #3f3f46;
+  --ink-3: #52525b;   /* 7.5:1 on --surface — passes WCAG AA */
+  --ink-4: #71717a;
+  --accent: #6d28d9;  /* indigo, desaturated for light bg */
+  --accent-2: #4f46e5;
+  --accent-glow: rgba(109, 40, 217, 0.15);
+  --accent-ink: #ffffff;
+  --ok: #15803d;
+  --warn: #b45309;
+  --danger: #b91c1c;
+  --good: #15803d;
+}
+
+/* Midnight theme: explicit user override OR auto-applied when the
+   user is on dark OS and hasn't picked a theme manually. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0a0f;
+    --bg-2: #14141c;
+    --surface: #14141c;
+    --surface-2: #1c1c26;
+    --line: #2a2a38;
+    --line-2: #3a3a48;
+    --ink: #f5f5f7;
+    --ink-2: #c4c4cf;
+    --ink-3: #9b9bab;    /* 4.7:1 on --surface — passes WCAG AA */
+    --ink-4: #6a6a78;
+    --accent: #a78bfa;
+    --accent-2: #818cf8;
+    --accent-glow: rgba(167, 139, 250, 0.2);
+    --accent-ink: #0a0a0f;
+    --ok: #4ade80;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --good: #4ade80;
+  }
+}
+:root[data-theme="midnight"] {
+  --bg: #0a0a0f;
+  --bg-2: #14141c;
+  --surface: #14141c;
+  --surface-2: #1c1c26;
+  --line: #2a2a38;
+  --line-2: #3a3a48;
+  --ink: #f5f5f7;
+  --ink-2: #c4c4cf;
+  --ink-3: #9b9bab;
+  --ink-4: #6a6a78;
+  --accent: #a78bfa;
+  --accent-2: #818cf8;
+  --accent-glow: rgba(167, 139, 250, 0.2);
+  --accent-ink: #0a0a0f;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --good: #4ade80;
+}
+
+/* Reduced-motion guard — runs before any animation rule below.
+   Per WCAG SC 2.3.3, when the user opts out of motion, we keep
+   transitions for state changes but drop the durations to ~0. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html, body { background: var(--bg); color: var(--ink); min-height: 100vh; overflow-x: hidden; font-family: var(--sans); line-height: 1.55; transition: background 0.6s; }
-
-/* =========================================================
-   AMBIENT LAYERS
-   ========================================================= */
-.aurora { position: fixed; inset: 0; z-index: -2; pointer-events: none; overflow: hidden; }
-.aurora-1, .aurora-2, .aurora-3 {
-  position: absolute; border-radius: 50%; filter: blur(80px); mix-blend-mode: screen; opacity: 0.6;
-  transition: background 0.6s;
-}
-.aurora-1 { width: 600px; height: 600px; background: var(--aurora-1); top: -200px; right: -150px; animation: drift1 22s ease-in-out infinite; }
-.aurora-2 { width: 500px; height: 500px; background: var(--aurora-2); bottom: -100px; left: -100px; animation: drift2 26s ease-in-out infinite; }
-.aurora-3 { width: 400px; height: 400px; background: var(--aurora-3); top: 50%; left: 50%; transform: translate(-50%, -50%); animation: drift3 30s ease-in-out infinite; }
-@keyframes drift1 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(-50px, 50px) scale(1.15); } }
-@keyframes drift2 { 0%, 100% { transform: translate(0, 0) scale(1); } 50% { transform: translate(60px, -40px) scale(1.1); } }
-@keyframes drift3 { 0%, 100% { transform: translate(-50%, -50%) scale(1); } 50% { transform: translate(-40%, -55%) scale(1.2); } }
-
-body::before {
-  content: ''; position: fixed; inset: 0; z-index: 200; pointer-events: none; opacity: 0.04;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  mix-blend-mode: overlay;
-}
+html, body { background: var(--bg); color: var(--ink); min-height: 100vh; overflow-x: hidden; font-family: var(--sans); line-height: 1.55; }
 
 .shell { max-width: 720px; margin: 0 auto; padding: 20px 16px 40px; position: relative; }
 
@@ -176,59 +153,10 @@ body::before {
   margin-bottom: 16px;
   animation: rise 0.6s 0.12s both;
 }
-.hero-card::before {
-  content: '';
-  position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), var(--accent), transparent);
-  background-size: 200% 100%;
-  animation: shimmer 4s linear infinite;
-}
-@keyframes shimmer { 0% { background-position: 100% 0%; } 100% { background-position: -100% 0%; } }
-
 .hero-top {
   display: flex; align-items: center; gap: 14px;
   margin-bottom: 22px;
 }
-
-/* Avatar — animated emoji or initial */
-.avatar-frame {
-  position: relative;
-  width: 64px; height: 64px;
-  flex-shrink: 0;
-  border-radius: 18px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  display: grid; place-items: center;
-  cursor: pointer;
-  transition: transform 0.3s;
-  overflow: hidden;
-}
-.avatar-frame:hover { transform: scale(1.06) rotate(-3deg); }
-.avatar-frame::before {
-  content: '';
-  position: absolute; inset: 2px;
-  background: var(--bg);
-  border-radius: 16px;
-}
-.avatar-frame .avatar-content {
-  position: relative; z-index: 1;
-  font-size: 32px;
-  display: grid; place-items: center;
-  width: 100%; height: 100%;
-}
-.avatar-frame .edit-pencil {
-  position: absolute;
-  bottom: -2px;
-  width: 22px; height: 22px;
-  background: var(--accent);
-  border-radius: 50%;
-  display: grid; place-items: center;
-  color: #000;
-  z-index: 2;
-  border: 2px solid var(--bg);
-  font-size: 10px;
-}
-[dir="rtl"] .avatar-frame .edit-pencil { left: -2px; }
-[dir="ltr"] .avatar-frame .edit-pencil { right: -2px; }
 
 .hero-greeting { flex: 1; min-width: 0; }
 .greet-line {
@@ -240,15 +168,6 @@ body::before {
   margin-bottom: 4px;
   display: flex; align-items: center; gap: 8px;
 }
-.greet-line .tier-pill {
-  padding: 2px 8px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  color: #000;
-  border-radius: 100px;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-}
 .hero-name {
   font-family: var(--serif);
   font-size: clamp(28px, 6.5vw, 40px);
@@ -257,14 +176,6 @@ body::before {
   font-weight: 700;
   word-break: break-word;
 }
-.hero-name .cursor {
-  display: inline-block; width: 3px; height: 0.8em;
-  background: var(--accent); vertical-align: middle;
-  margin-inline-start: 4px;
-  animation: blink 1s steps(2) infinite;
-}
-@keyframes blink { 50% { opacity: 0; } }
-
 .hero-status {
   display: inline-flex; align-items: center; gap: 6px;
   margin-top: 6px;
@@ -275,12 +186,11 @@ body::before {
 }
 .hero-status .pip { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-3); }
 .hero-status.s-active { color: var(--good); }
-.hero-status.s-active .pip { background: var(--good); box-shadow: 0 0 8px var(--good); animation: ping 1.6s ease-out infinite; }
+.hero-status.s-active .pip { background: var(--good); }
 .hero-status.s-limited { color: var(--warn); }
 .hero-status.s-limited .pip { background: var(--warn); }
 .hero-status.s-expired, .hero-status.s-disabled { color: var(--danger); }
 .hero-status.s-expired .pip, .hero-status.s-disabled .pip { background: var(--danger); }
-@keyframes ping { 0%, 100% { box-shadow: 0 0 0 0 var(--good); } 50% { box-shadow: 0 0 0 5px transparent; } }
 
 /* Usage grid */
 .usage-grid {
@@ -304,10 +214,7 @@ body::before {
   line-height: 0.85;
   letter-spacing: -0.04em;
   font-weight: 700;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
+  color: var(--ink);
   margin-bottom: 4px;
 }
 .usage-detail {
@@ -318,20 +225,13 @@ body::before {
 }
 .usage-detail .of { color: var(--ink-3); }
 
-/* Circular progress */
+/* Circular progress — flat panel; ECharts custom-gauge paints the arc. */
 .ring-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
 .ring {
   width: 100%; height: 100%; border-radius: 50%;
-  background: conic-gradient(from -90deg, var(--accent) 0deg, var(--accent-2) calc(var(--pct, 0) * 3.6deg), var(--surface-2) calc(var(--pct, 0) * 3.6deg));
+  background: var(--surface);
+  border: 1px solid var(--line);
   position: relative;
-  transition: --pct 1.4s cubic-bezier(0.65, 0, 0.35, 1) 0.3s;
-}
-@property --pct {
-  syntax: '<number>'; inherits: false; initial-value: 0;
-}
-.ring::before {
-  content: ''; position: absolute; inset: 3px;
-  background: var(--bg); border-radius: 50%;
 }
 .ring-content {
   position: absolute; inset: 0;
@@ -449,31 +349,23 @@ body::before {
   animation: rise 0.6s 0.3s both;
 }
 .btn-primary {
-  position: relative;
-  height: 54px;
-  padding: 0 20px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  border: none;
-  border-radius: 14px;
-  color: #000;
+  height: 48px;
+  padding: 0 var(--s-5);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  color: var(--accent-ink);
   font-family: var(--sans);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-size: var(--t-sm);
+  font-weight: 600;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  box-shadow: 0 8px 20px -8px var(--accent-glow), inset 0 1px 0 rgba(255,255,255,0.3);
-  overflow: hidden;
+  transition: background 0.15s, border-color 0.15s;
+  display: flex; align-items: center; justify-content: center; gap: var(--s-2);
 }
-.btn-primary::after {
-  content: ''; position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
-  transform: translateX(-100%);
-  transition: transform 0.6s;
-}
-.btn-primary:hover::after { transform: translateX(100%); }
-.btn-primary:active { transform: scale(0.98); }
+.btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+.btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn-primary[aria-disabled="true"] { opacity: 0.5; cursor: not-allowed; pointer-events: none; }
 
 .btn-icon {
   width: 54px; height: 54px;
@@ -501,12 +393,7 @@ body::before {
   font-weight: 700;
   letter-spacing: -0.02em;
 }
-.sec-head h2 .accent {
-  background: linear-gradient(135deg, var(--accent), var(--accent-2));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
+.sec-head h2 .accent { color: var(--accent); }
 .sec-head .meta { font-family: var(--mono); font-size: 10px; color: var(--ink-3); letter-spacing: 0.14em; text-transform: uppercase; }
 
 /* =========================================================
@@ -668,11 +555,7 @@ body::before {
   background: var(--ink-4);
 }
 .device-status.online { color: var(--good); }
-.device-status.online .pip {
-  background: var(--good);
-  box-shadow: 0 0 8px var(--good);
-  animation: ping 1.6s ease-out infinite;
-}
+.device-status.online .pip { background: var(--good); }
 
 .devices-empty, .configs-empty {
   padding: 32px 20px;
@@ -1149,6 +1032,89 @@ body::before {
 @keyframes slideUp { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
 /* =========================================================
+   STATES — error, disabled, skeleton (v1.6)
+   ========================================================= */
+.net-error {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--danger);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  color: var(--danger);
+  font-size: var(--t-sm);
+}
+.net-error .retry {
+  margin-inline-start: auto;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+}
+.net-error .retry:hover { background: var(--danger); color: var(--surface); }
+button[aria-disabled="true"], a[aria-disabled="true"] {
+  opacity: 0.5; cursor: not-allowed; pointer-events: none;
+}
+.skeleton {
+  background: var(--surface-2);
+  border-radius: var(--r-md);
+  min-height: 1em;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton {
+    background: linear-gradient(90deg,
+      var(--surface-2) 0%, var(--line) 50%, var(--surface-2) 100%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+  @keyframes skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+}
+
+/* =========================================================
+   MORE (secondary surface — Apps + Support, collapsed by default)
+   ========================================================= */
+.more {
+  margin-bottom: var(--s-6);
+  border-top: 1px solid var(--line);
+  padding-top: var(--s-4);
+}
+.more > summary {
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: var(--t-xs);
+  color: var(--ink-3);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: var(--s-2) 0;
+  display: inline-flex; align-items: center; gap: var(--s-2);
+}
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::after {
+  content: '+';
+  font-family: var(--mono);
+  font-size: var(--t-md);
+  color: var(--ink-3);
+  transition: transform 0.15s;
+}
+.more[open] > summary::after { content: '−'; }
+.more > summary:hover { color: var(--ink); }
+.more > summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm);
+}
+.more-section { margin-top: var(--s-4); margin-bottom: var(--s-5); }
+.more-section:last-child { margin-bottom: 0; }
+
+/* Universal :focus-visible ring */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-sm); }
+
+/* =========================================================
    RESPONSIVE
    ========================================================= */
 @media (max-width: 540px) {
@@ -1189,12 +1155,6 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
 </head>
 <body>
 
-<div class="aurora">
-  <div class="aurora-1"></div>
-  <div class="aurora-2"></div>
-  <div class="aurora-3"></div>
-</div>
-
 <div class="shell">
 
   <!-- TOPBAR -->
@@ -1217,16 +1177,11 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
   <!-- HERO -->
   <section class="hero-card">
     <div class="hero-top">
-      <div class="avatar-frame" id="avatarFrame">
-        <div class="avatar-content" id="avatarContent">👤</div>
-        <div class="edit-pencil">✎</div>
-      </div>
       <div class="hero-greeting">
         <div class="greet-line">
           <span data-i18n="welcomeBack">WELCOME BACK</span>
-          <span class="tier-pill" id="tierPill">MEMBER</span>
         </div>
-        <h1 class="hero-name"><span id="usernameLabel">—</span><span class="cursor"></span></h1>
+        <h1 class="hero-name"><span id="usernameLabel">—</span></h1>
         <div class="hero-status" id="statusMark">
           <span class="pip"></span>
           <span id="statusLabel">—</span>
@@ -1274,7 +1229,7 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
 
   <!-- CTA -->
   <div class="cta-row">
-    <button class="btn-primary" onclick="copySub()">
+    <button class="btn-primary" onclick="copySub(this)">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
         <rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
       </svg>
@@ -1292,7 +1247,6 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
   <section class="section" id="devices">
     <div class="sec-head">
       <h2><span data-i18n="connected">Connected</span> <span class="accent" data-i18n="devicesAccent">Devices</span></h2>
-      <span class="meta">01</span>
     </div>
     <div class="devices-head">
       <div class="devices-summary">
@@ -1319,7 +1273,6 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
   <section class="section" id="usageSection">
     <div class="sec-head">
       <h2><span data-i18n="usage">Usage</span> <span class="accent" data-i18n="usageAccent">Stats</span></h2>
-      <span class="meta">02</span>
     </div>
     <div class="usage-tabs" id="usageTabs">
       <button type="button" class="usage-tab active" data-period="day" data-i18n="usageDaily">Today</button>
@@ -1343,33 +1296,35 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
     </div>
   </section>
 
-  <!-- APPS -->
-  <section class="section">
-    <div class="sec-head">
-      <h2><span data-i18n="getThe">Get the</span> <span class="accent" data-i18n="appAccent">App</span></h2>
-      <span class="meta">03</span>
-    </div>
-    <div class="os-rail" id="osRail"></div>
-    <div class="app-grid" id="appsGrid"></div>
-  </section>
-
-  <!-- CONFIGS -->
+  <!-- CONFIGS — primary list with per-row copy/QR -->
   <section class="section">
     <div class="sec-head">
       <h2><span data-i18n="servers">Servers</span></h2>
-      <span class="meta">04 · <span id="configCountMeta">0</span></span>
+      <span class="meta"><span id="configCountMeta">0</span></span>
     </div>
     <div class="configs-grid" id="configsGrid"></div>
   </section>
 
-  <!-- SUPPORT -->
-  <section class="section">
-    <div class="sec-head">
-      <h2><span data-i18n="needAccent">Need</span> <span class="accent" data-i18n="helpAccent">Help?</span></h2>
-      <span class="meta">05</span>
-    </div>
-    <div class="support-grid" id="supportGrid"></div>
-  </section>
+  <!-- SECONDARY: Apps + Support, collapsed by default. Users who already
+       have a client installed never need to expand this. -->
+  <details class="more">
+    <summary data-i18n="more">More</summary>
+
+    <section class="section more-section">
+      <div class="sec-head">
+        <h2><span data-i18n="getThe">Get the</span> <span class="accent" data-i18n="appAccent">App</span></h2>
+      </div>
+      <div class="os-rail" id="osRail"></div>
+      <div class="app-grid" id="appsGrid"></div>
+    </section>
+
+    <section class="section more-section">
+      <div class="sec-head">
+        <h2><span data-i18n="needAccent">Need</span> <span class="accent" data-i18n="helpAccent">Help?</span></h2>
+      </div>
+      <div class="support-grid" id="supportGrid"></div>
+    </section>
+  </details>
 
 </div>
 
@@ -1389,10 +1344,6 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
       <div class="m-sub" id="qrLabelSub"></div>
       <div class="qr-frame" id="qrFrame"></div>
     </div>
-    <div class="modal-actions">
-      <button onclick="copyFromModal()" data-i18n="copy">COPY</button>
-      <button onclick="copyB64FromModal()" data-i18n="copyB64">BASE64</button>
-    </div>
   </div>
 </div>
 
@@ -1409,18 +1360,13 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
     </div>
     <div class="modal-body">
       <div class="theme-grid" id="themeGrid"></div>
-
-      <div style="margin-top: 20px;">
-        <div class="m-sub" style="margin-bottom: 12px;" data-i18n="pickAvatar">CHOOSE YOUR AVATAR</div>
-        <div class="avatar-grid" id="avatarGrid"></div>
-      </div>
     </div>
   </div>
 </div>
 
 <div class="toasts" id="toasts"></div>
 
-<!-- DATA INJECTION (Jinja) -->
+<!-- DATA INJECTION (sample for preview.html — Jinja is in index.html) -->
 <div id="pgData"
      data-username="mohammad"
      data-status="active"
@@ -1497,7 +1443,7 @@ const I18N = {
     servers: "سرور‌ها",
     needAccent: "نیاز به", helpAccent: "کمک؟",
     scanQR: "اسکن با اپ", copy: "کپی", copyB64: "Base64", copied: "کپی شد",
-    pickTheme: "تم خودت رو انتخاب کن", pickAvatar: "آواتار خودت رو انتخاب کن",
+    pickTheme: "تم", more: "بیشتر", error: "خطا",
     expired: "منقضی", days: "روز", hours: "ساعت", min: "دقیقه",
     status_active: "آنلاین", status_limited: "محدود", status_expired: "منقضی", status_disabled: "غیرفعال", status_on_hold: "در انتظار",
     recommend: "پیشنهادی",
@@ -1546,7 +1492,7 @@ const I18N = {
     servers: "Servers",
     needAccent: "Need", helpAccent: "Help?",
     scanQR: "SCAN WITH APP", copy: "COPY", copyB64: "BASE64", copied: "COPIED",
-    pickTheme: "PICK YOUR THEME", pickAvatar: "CHOOSE YOUR AVATAR",
+    pickTheme: "THEME", more: "More", error: "Error",
     expired: "Expired", days: "days", hours: "hrs", min: "min",
     status_active: "ONLINE", status_limited: "LIMITED", status_expired: "EXPIRED", status_disabled: "DISABLED", status_on_hold: "ON HOLD",
     recommend: "RECOMMENDED",
@@ -1590,13 +1536,10 @@ const I18N = {
    DEVICE DETECTION helpers
    ========================================================= */
 const THEMES = [
-  { id: 'midnight', name: { fa: 'نیمه‌شب', en: 'Midnight' }, desc: { fa: 'بنفش کلاسیک', en: 'Classic Purple' } },
-  { id: 'gold', name: { fa: 'طلایی', en: 'Gold' }, desc: { fa: 'لوکس و گرم', en: 'Luxury & Warm' } },
-  { id: 'emerald', name: { fa: 'زمرد', en: 'Emerald' }, desc: { fa: 'سبز آرامش‌بخش', en: 'Calm Green' } },
-  { id: 'crimson', name: { fa: 'قرمز', en: 'Crimson' }, desc: { fa: 'پرانرژی و جسور', en: 'Bold & Vibrant' } }
+  { id: 'auto',     name: { fa: 'خودکار',   en: 'Auto' },     desc: { fa: 'مطابق سیستم',   en: 'Follow system' } },
+  { id: 'light',    name: { fa: 'روشن',     en: 'Light' },    desc: { fa: 'برای روز',      en: 'For daylight' } },
+  { id: 'midnight', name: { fa: 'نیمه‌شب', en: 'Midnight' }, desc: { fa: 'برای شب',       en: 'For night' } }
 ];
-
-const AVATARS = ['👤', '🦊', '🐺', '🦅', '🐉', '🦁', '🐯', '🐻', '🦄', '🐱', '🐶', '🐼', '🦝', '🦉', '🐲', '⚡', '🔥', '💎', '👑', '🌙', '⭐', '🚀', '🎯', '🎮'];
 
 const APPS = {
   android: [
@@ -1645,8 +1588,7 @@ const $ = (q) => document.querySelector(q);
 const $$ = (q) => document.querySelectorAll(q);
 
 let LANG = localStorage.getItem('pc-lang') || 'fa';
-let THEME = localStorage.getItem('pc-theme') || 'midnight';
-let AVATAR = localStorage.getItem('pc-avatar') || '👤';
+let THEME = localStorage.getItem('pc-theme') || 'auto';
 let CURRENT_OS = detectOS();
 let MODAL_DATA = null;
 
@@ -1751,16 +1693,6 @@ function animateNumber(el, target, duration = 1400) {
 /* =========================================================
    TIER CALCULATION (based on usage/data limit)
    ========================================================= */
-function calcTier() {
-  // simple tier based on data limit: 0 or huge = Platinum, big = Gold, med = Silver, small = Bronze
-  const t = I18N[LANG];
-  const total = PG.data_limit;
-  if (total === 0 || total >= 500 * 1024 ** 3) return { name: t.tierPlatinum, key: 'platinum' };
-  if (total >= 200 * 1024 ** 3) return { name: t.tierGold, key: 'gold' };
-  if (total >= 50 * 1024 ** 3) return { name: t.tierSilver, key: 'silver' };
-  return { name: t.tierBronze, key: 'bronze' };
-}
-
 /* =========================================================
    SMART ALERTS
    ========================================================= */
@@ -1823,24 +1755,11 @@ function applyI18n() {
 }
 
 function renderIdentity() {
-  $('#avatarContent').textContent = AVATAR;
-
+  // Plain text — no per-character typing animation. The earlier typed
+  // effect competed with the primary copy CTA for attention.
   const target = PG.username || 'guest';
-  const el = $('#usernameLabel');
-  el.textContent = '';
+  $('#usernameLabel').textContent = target;
   document.title = target + ' — Plus Collection';
-  let i = 0;
-  const typeStep = () => {
-    if (i <= target.length) {
-      el.textContent = target.slice(0, i);
-      i++;
-      setTimeout(typeStep, 60);
-    }
-  };
-  setTimeout(typeStep, 300);
-
-  const tier = calcTier();
-  $('#tierPill').textContent = tier.name;
 
   const validStatuses = ['active','limited','expired','disabled','on_hold'];
   const s = validStatuses.includes(PG.status) ? PG.status : 'active';
@@ -2913,33 +2832,33 @@ function renderThemes() {
   });
 }
 
-function renderAvatars() {
-  const grid = $('#avatarGrid');
-  grid.innerHTML = '';
-  AVATARS.forEach(a => {
-    const btn = document.createElement('button');
-    btn.className = 'avatar-opt' + (a === AVATAR ? ' active' : '');
-    btn.textContent = a;
-    btn.onclick = () => {
-      AVATAR = a;
-      localStorage.setItem('pc-avatar', AVATAR);
-      $('#avatarContent').textContent = AVATAR;
-      renderAvatars();
-    };
-    grid.appendChild(btn);
-  });
-}
-
 function applyTheme() {
-  document.documentElement.dataset.theme = THEME;
+  // 'auto' = let the OS preference (and the @media block in CSS) decide;
+  // we do this by leaving the data-theme attribute UNSET on <html>.
+  // 'light' and 'midnight' override unconditionally.
+  if (THEME === 'auto' || !THEME) {
+    delete document.documentElement.dataset.theme;
+  } else {
+    document.documentElement.dataset.theme = THEME;
+  }
 }
 
 /* =========================================================
    ACTIONS
    ========================================================= */
-function copySub() {
-  navigator.clipboard.writeText(PG.subscription_url);
-  toast(I18N[LANG].copied);
+async function copySub(btn) {
+  // Disable while we wait on the async clipboard write so a fast
+  // double-tap doesn't fire toast twice. btn arg is optional — the
+  // header CTA passes `this`; programmatic callers can omit it.
+  if (btn) btn.setAttribute('aria-disabled', 'true');
+  try {
+    await navigator.clipboard.writeText(PG.subscription_url);
+    toast(I18N[LANG].copied);
+  } catch {
+    toast(I18N[LANG].error);
+  } finally {
+    if (btn) btn.removeAttribute('aria-disabled');
+  }
 }
 
 function showSubQR() { showQR(PG.subscription_url, 'Subscription Link'); }
@@ -2958,17 +2877,10 @@ function showQR(data, title) {
 function closeQR() { $('#qrModal').classList.remove('open'); MODAL_DATA = null; }
 function closeTheme() { $('#themeModal').classList.remove('open'); }
 
-function copyFromModal() {
-  if (MODAL_DATA) { navigator.clipboard.writeText(MODAL_DATA); toast(I18N[LANG].copied); }
-}
-function copyB64FromModal() {
-  if (MODAL_DATA) {
-    try {
-      navigator.clipboard.writeText(btoa(unescape(encodeURIComponent(MODAL_DATA))));
-      toast(I18N[LANG].copied + ' · BASE64');
-    } catch { toast('ERROR'); }
-  }
-}
+// copyFromModal / copyB64FromModal removed in v1.6 — the QR modal is a
+// viewer now. The row's "Copy" button is the single canonical surface
+// for writing the value to clipboard; Base64 is a niche use that didn't
+// earn ongoing surface area.
 
 function toast(msg) {
   const t = document.createElement('div');
@@ -2999,13 +2911,6 @@ $('#langBtn').onclick = () => {
 
 $('#themeBtn').onclick = () => {
   renderThemes();
-  renderAvatars();
-  $('#themeModal').classList.add('open');
-};
-
-$('#avatarFrame').onclick = () => {
-  renderThemes();
-  renderAvatars();
   $('#themeModal').classList.add('open');
 };
 
