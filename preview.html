@@ -2411,15 +2411,17 @@ function recordIPHistory(devices) {
   }
 }
 
-// Render the data-limit ring as an ECharts gauge once the library lands.
-// Until then the conic-gradient ring stays visible as a graceful fallback.
+// Render the data-limit ring as the ECharts "custom-gauge" demo (clipped
+// panel image rotating with the value). Until ECharts lands the
+// conic-gradient ring stays as a graceful fallback.
+//
+// Demo source: https://echarts.apache.org/examples/en/editor.html?c=custom-gauge
 async function renderRingGauge(used, total) {
   const el = document.getElementById('ringGauge');
   const wrap = document.getElementById('ringWrap');
   if (!el || !wrap) return;
   let echarts;
   try { echarts = await loadECharts(); } catch { return; }
-  const t = _chartTheme();
   if (!_ringGauge || _ringGauge.getDom() !== el) {
     _ringGauge = echarts.init(el);
     if (!_ringGauge._wired) {
@@ -2427,56 +2429,125 @@ async function renderRingGauge(used, total) {
       _ringGauge._wired = true;
     }
   }
+  // The panel image lives next to echarts.min.js on the bridge static dir.
+  const panelUrl = (ECHARTS_URL || '').replace(/echarts\.min\.js$/, 'custom-gauge-panel.png');
+  const t = _chartTheme();
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
   const isInf = total <= 0;
-  // Conic gradient from accent → accent-2 along the arc, plus a soft
-  // glow on the same stroke so the ring reads as a single luminous arc
-  // rather than a flat band of color.
-  const progressColor = {
-    type: 'linear', x: 0, y: 0, x2: 1, y2: 1,
-    colorStops: [
-      { offset: 0,   color: t.accent },
-      { offset: 1,   color: t.accent2 }
-    ]
-  };
+  // Display value: percentage 0..100 (or 100 for unlimited so the ring is full).
+  const dataVal = isInf ? 100 : pct;
+  const valOnRadianMax = 100;
+  // The container is 100px square; scale the demo's 200/170/40/140 radii down.
+  const outer = 48, inner = 40, pointerInner = 8, insidePanel = 32;
+
+  function convertToPolarPoint(params, radius, radian) {
+    return [
+      Math.cos(radian) * radius + params.coordSys.cx,
+      -Math.sin(radian) * radius + params.coordSys.cy
+    ];
+  }
+  function makePointerPoints(params, polarEndRadian) {
+    return [
+      convertToPolarPoint(params, outer, polarEndRadian),
+      convertToPolarPoint(params, outer, polarEndRadian + Math.PI * 0.03),
+      convertToPolarPoint(params, pointerInner, polarEndRadian)
+    ];
+  }
+  function makeText(val) {
+    if (isInf) return '∞';
+    return ((val / valOnRadianMax) * 100).toFixed(0) + '%';
+  }
+  function renderItem(params, api) {
+    const valOnRadian = api.value(1);
+    const coords = api.coord([api.value(0), valOnRadian]);
+    const polarEndRadian = coords[3];
+    const imageStyle = {
+      image: panelUrl,
+      x: params.coordSys.cx - outer,
+      y: params.coordSys.cy - outer,
+      width: outer * 2,
+      height: outer * 2
+    };
+    return {
+      type: 'group',
+      children: [
+        {
+          type: 'image', style: imageStyle,
+          clipPath: {
+            type: 'sector',
+            shape: {
+              cx: params.coordSys.cx, cy: params.coordSys.cy,
+              r: outer, r0: inner,
+              startAngle: 0, endAngle: -polarEndRadian,
+              transition: 'endAngle', enterFrom: { endAngle: 0 }
+            }
+          }
+        },
+        {
+          type: 'image', style: imageStyle,
+          clipPath: {
+            type: 'polygon',
+            shape: { points: makePointerPoints(params, polarEndRadian) },
+            extra: {
+              polarEndRadian: polarEndRadian,
+              transition: 'polarEndRadian',
+              enterFrom: { polarEndRadian: 0 }
+            },
+            during: function (apiDuring) {
+              apiDuring.setShape(
+                'points',
+                makePointerPoints(params, apiDuring.getExtra('polarEndRadian'))
+              );
+            }
+          }
+        },
+        {
+          type: 'circle',
+          shape: { cx: params.coordSys.cx, cy: params.coordSys.cy, r: insidePanel },
+          style: {
+            fill: '#fff',
+            shadowBlur: 18,
+            shadowColor: 'rgba(76,107,167,0.4)'
+          }
+        },
+        {
+          type: 'text',
+          extra: {
+            valOnRadian: valOnRadian,
+            transition: 'valOnRadian',
+            enterFrom: { valOnRadian: 0 }
+          },
+          style: {
+            text: makeText(valOnRadian),
+            fontSize: 18,
+            fontWeight: 700,
+            fontFamily: 'var(--serif)',
+            x: params.coordSys.cx,
+            y: params.coordSys.cy,
+            fill: 'rgb(0,50,190)',
+            align: 'center', verticalAlign: 'middle',
+            enterFrom: { opacity: 0 }
+          },
+          during: function (apiDuring) {
+            apiDuring.setStyle('text', makeText(apiDuring.getExtra('valOnRadian')));
+          }
+        }
+      ]
+    };
+  }
+
   _ringGauge.setOption({
-    series: [{
-      type: 'gauge',
-      startAngle: 90,
-      endAngle: -270,
-      radius: '92%',
-      progress: {
-        show: !isInf,
-        width: 7,
-        roundCap: true,
-        itemStyle: {
-          color: progressColor,
-          shadowColor: _withAlpha(t.accent2, 0.55),
-          shadowBlur: 14
-        }
-      },
-      pointer: { show: false },
-      axisLine: { lineStyle: { width: 7, color: [[1, t.surface2]] } },
-      axisTick: { show: false },
-      splitLine: { show: false },
-      axisLabel: { show: false },
-      anchor: { show: false },
-      title: { show: false },
-      detail: {
-        valueAnimation: !isInf,
-        offsetCenter: [0, 0],
-        formatter: () => isInf ? '{inf|∞}' : `{n|${Math.round(pct)}}{sm|%}`,
-        rich: {
-          n:   { fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 700, color: t.ink, padding: [0, 1, 0, 0] },
-          sm:  { fontFamily: 'var(--serif)', fontSize: 14, color: t.ink3 },
-          inf: { fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 700, color: t.ink },
-        }
-      },
-      data: [{ value: isInf ? 100 : pct }]
-    }],
     animation: !isInf,
-    animationDuration: 1400,
-    animationEasing: 'cubicOut'
+    animationEasing: 'quarticInOut',
+    animationDuration: 1000,
+    animationDurationUpdate: 1000,
+    animationEasingUpdate: 'quarticInOut',
+    dataset: { source: [[1, dataVal]] },
+    tooltip: { show: false },
+    angleAxis: { type: 'value', startAngle: 0, show: false, min: 0, max: valOnRadianMax },
+    radiusAxis: { type: 'value', show: false },
+    polar: {},
+    series: [{ type: 'custom', coordinateSystem: 'polar', renderItem: renderItem }]
   }, true);
   wrap.classList.add('with-gauge');
 }
@@ -2562,32 +2633,35 @@ function _withAlpha(c, a) {
   return `color-mix(in srgb, ${c} ${(a * 100).toFixed(0)}%, transparent)`;
 }
 
+// Adapted from the ECharts "line-tooltip-touch" demo:
+// https://echarts.apache.org/examples/en/editor.html?c=line-tooltip-touch
+//
+// Touch-first: the tooltip is parked at a fixed y, follows a draggable
+// xAxis axisPointer with a snap handle. Smoothed line over a gradient
+// area, no splitline noise. PasarGuard doesn't expose upload/download
+// separately so we draw a single Total series.
 function _usageOption(aggregated, period, total) {
-  const t = _chartTheme();
-  const peak = aggregated.reduce((m, d) => d.v > m ? d.v : m, 0);
-  const barTop    = t.accent;
-  const barBottom = _withAlpha(t.accent, 0.25);
-  const peakTop    = t.accent2;
-  const peakBottom = _withAlpha(t.accent2, 0.3);
+  const seriesData = aggregated.map(d => [new Date(d.t).getTime(), d.v]);
+  const lineColor  = '#0770FF';
+  const areaTop    = 'rgba(58, 77, 233, 0.8)';
+  const areaBottom = 'rgba(58, 77, 233, 0.3)';
+  const pointerColor = '#7581BD';
+  // Pick a value to snap to on first render — the demo uses a hard-coded
+  // date; we use the latest bucket so the cursor sits on the most recent
+  // data point. Falls back to the first bucket if data is empty.
+  const initialPointerValue = seriesData.length ? seriesData[seriesData.length - 1][0] : 0;
+
   return {
-    backgroundColor: 'transparent',
-    animation: true,
-    animationDuration: 750,
-    animationEasing: 'cubicOut',
-    animationDelay: (idx) => idx * 20,
-    grid: { left: 56, right: 14, top: 18, bottom: 28, containLabel: false },
+    title: { show: false },
     tooltip: {
-      trigger: 'axis',
-      backgroundColor: 'rgba(15, 16, 22, 0.94)',
-      borderColor: t.line,
+      triggerOn: 'none',
+      position: (pt) => [pt[0], 50],
+      backgroundColor: 'rgba(15, 16, 22, 0.92)',
+      borderColor: 'rgba(255,255,255,0.08)',
       borderWidth: 1,
-      padding: [10, 14],
-      extraCssText: 'border-radius:10px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,0.45);',
-      textStyle: { color: t.ink, fontFamily: 'var(--mono)', fontSize: 11 },
-      axisPointer: {
-        type: 'shadow',
-        shadowStyle: { color: _withAlpha(t.accent, 0.08) }
-      },
+      padding: [8, 12],
+      extraCssText: 'border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.4);',
+      textStyle: { color: '#fff', fontFamily: 'var(--mono)', fontSize: 11 },
       formatter: (params) => {
         const p = Array.isArray(params) ? params[0] : params;
         if (!p) return '';
@@ -2595,55 +2669,78 @@ function _usageOption(aggregated, period, total) {
         const when = fmtBucketLabel(new Date(p.value[0]), period, true);
         const pct = total > 0 ? (p.value[1] / total) * 100 : 0;
         const pctStr = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
-        return `<div style="color:${t.ink3};font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">${escapeHtml(when)}</div>`
-             + `<div style="color:${t.ink};font-size:18px;font-weight:700;font-family:var(--serif);line-height:1">${sz.value}<span style="color:${t.ink3};font-size:11px;margin-inline-start:5px;font-weight:400;font-family:var(--mono)">${sz.unit}</span></div>`
-             + `<div style="color:${t.ink3};font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:5px">${pctStr}% ${escapeHtml(I18N[LANG].usageOfTotal)}</div>`;
+        return `<div style="color:rgba(255,255,255,0.55);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">${escapeHtml(when)}</div>`
+             + `<div style="color:#fff;font-size:16px;font-weight:700;font-family:var(--serif);line-height:1">${sz.value}<span style="color:rgba(255,255,255,0.55);font-size:11px;margin-inline-start:5px;font-weight:400;font-family:var(--mono)">${sz.unit}</span></div>`
+             + `<div style="color:rgba(255,255,255,0.55);font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:4px">${pctStr}% ${escapeHtml(I18N[LANG].usageOfTotal)}</div>`;
       }
     },
     xAxis: {
       type: 'time',
-      boundaryGap: ['3%', '3%'],
+      axisPointer: {
+        value: initialPointerValue,
+        snap: true,
+        lineStyle: { color: pointerColor, width: 2 },
+        label: {
+          show: true,
+          formatter: (params) => fmtBucketLabel(new Date(params.value), period, true),
+          backgroundColor: pointerColor,
+          color: '#fff',
+          fontFamily: 'var(--mono)',
+          fontSize: 10,
+          padding: [4, 8]
+        },
+        handle: {
+          show: true,
+          color: pointerColor,
+          size: 30,
+          margin: 36
+        }
+      },
+      splitLine: { show: false },
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
-        color: t.ink3, fontSize: 10, fontFamily: 'var(--mono)',
-        hideOverlap: true, margin: 12,
+        color: 'rgba(255,255,255,0.55)',
+        fontFamily: 'var(--mono)',
+        fontSize: 10,
+        hideOverlap: true,
         formatter: (val) => fmtBucketLabel(new Date(val), period)
       }
     },
     yAxis: {
       type: 'value',
+      axisTick: { inside: true, lineStyle: { color: 'rgba(255,255,255,0.15)' } },
+      splitLine: { show: false },
       axisLine: { show: false },
-      axisTick: { show: false },
-      splitNumber: 3,
       axisLabel: {
-        color: t.ink3, fontSize: 10, fontFamily: 'var(--mono)', margin: 14,
-        formatter: (val) => { const s = fmtSize(val); return s.value + s.unit; }
+        inside: true,
+        color: 'rgba(255,255,255,0.45)',
+        fontFamily: 'var(--mono)',
+        fontSize: 10,
+        formatter: (val) => { const s = fmtSize(val); return `${s.value}${s.unit}\n`; }
       },
-      splitLine: {
-        lineStyle: { color: _withAlpha(t.ink, 0.06), type: 'dashed', width: 1 }
-      }
+      z: 10
     },
+    grid: { top: 24, left: 8, right: 8, bottom: 42 },
+    dataZoom: [{ type: 'inside', throttle: 50 }],
     series: [{
-      type: 'bar',
-      data: aggregated.map(d => [d.t.getTime(), d.v]),
-      itemStyle: {
-        color: (p) =>
-          (p.value[1] >= peak && p.value[1] > 0)
-            ? _gradient(peakTop, peakBottom)
-            : _gradient(barTop, barBottom),
-        borderRadius: [6, 6, 0, 0]
-      },
-      barMaxWidth: 32,
-      emphasis: {
-        focus: 'series',
-        itemStyle: {
-          color: _gradient(peakTop, peakBottom),
-          shadowColor: _withAlpha(t.accent2, 0.5),
-          shadowBlur: 12,
-          shadowOffsetY: -2
+      name: I18N[LANG].usage || 'Usage',
+      type: 'line',
+      smooth: true,
+      symbol: 'circle',
+      symbolSize: 5,
+      sampling: 'average',
+      itemStyle: { color: lineColor },
+      areaStyle: {
+        color: {
+          type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+          colorStops: [
+            { offset: 0, color: areaTop },
+            { offset: 1, color: areaBottom }
+          ]
         }
-      }
+      },
+      data: seriesData
     }]
   };
 }

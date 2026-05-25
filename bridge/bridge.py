@@ -63,6 +63,7 @@ STATIC_DIR = os.environ.get("STATIC_DIR", "/opt/subforme-bridge/static")
 # permissive any-file handler would be the kind of thing that bites later.
 STATIC_ALLOW = {
     "echarts.min.js": "application/javascript; charset=utf-8",
+    "custom-gauge-panel.png": "image/png",
 }
 TLS_CERT_FILE = os.environ.get("TLS_CERT_FILE", "").strip() or None
 TLS_KEY_FILE = os.environ.get("TLS_KEY_FILE", "").strip() or None
