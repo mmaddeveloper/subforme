@@ -635,10 +635,19 @@ body::before {
 }
 .device-spark {
   width: 100%;
-  height: 22px;
+  height: 26px;
+  margin-top: 6px;
+  /* Don't hide with :empty — ECharts needs a non-zero width to init.
+     The .ready class is added by JS once a real chart has been drawn;
+     until then we collapse the height instead of removing the box. */
+  height: 0;
+  margin-top: 0;
+  transition: height .2s ease, margin .2s ease;
+}
+.device-spark.ready {
+  height: 26px;
   margin-top: 6px;
 }
-.device-spark:empty { display: none; }
 .device-meta .ip {
   color: var(--ink-2);
 }
@@ -2415,23 +2424,35 @@ async function renderRingGauge(used, total) {
     }
   }
   const pct = total > 0 ? Math.min(100, (used / total) * 100) : 0;
-  // For unlimited (no data_limit) we still show the gauge, just full of
-  // track. The center text shows ∞ instead of a percentage.
   const isInf = total <= 0;
+  // Conic gradient from accent → accent-2 along the arc, plus a soft
+  // glow on the same stroke so the ring reads as a single luminous arc
+  // rather than a flat band of color.
+  const progressColor = {
+    type: 'linear', x: 0, y: 0, x2: 1, y2: 1,
+    colorStops: [
+      { offset: 0,   color: t.accent },
+      { offset: 1,   color: t.accent2 }
+    ]
+  };
   _ringGauge.setOption({
     series: [{
       type: 'gauge',
       startAngle: 90,
       endAngle: -270,
-      radius: '95%',
+      radius: '92%',
       progress: {
         show: !isInf,
-        width: 5,
+        width: 7,
         roundCap: true,
-        itemStyle: { color: t.accent2 }
+        itemStyle: {
+          color: progressColor,
+          shadowColor: _withAlpha(t.accent2, 0.55),
+          shadowBlur: 14
+        }
       },
       pointer: { show: false },
-      axisLine: { lineStyle: { width: 5, color: [[1, t.surface2]] } },
+      axisLine: { lineStyle: { width: 7, color: [[1, t.surface2]] } },
       axisTick: { show: false },
       splitLine: { show: false },
       axisLabel: { show: false },
@@ -2442,13 +2463,14 @@ async function renderRingGauge(used, total) {
         offsetCenter: [0, 0],
         formatter: () => isInf ? '{inf|∞}' : `{n|${Math.round(pct)}}{sm|%}`,
         rich: {
-          n:   { fontFamily: 'var(--serif)', fontSize: 24, fontWeight: 700, color: t.ink },
-          sm:  { fontFamily: 'var(--serif)', fontSize: 13, color: t.ink },
-          inf: { fontFamily: 'var(--serif)', fontSize: 28, fontWeight: 700, color: t.ink },
+          n:   { fontFamily: 'var(--serif)', fontSize: 26, fontWeight: 700, color: t.ink, padding: [0, 1, 0, 0] },
+          sm:  { fontFamily: 'var(--serif)', fontSize: 14, color: t.ink3 },
+          inf: { fontFamily: 'var(--serif)', fontSize: 30, fontWeight: 700, color: t.ink },
         }
       },
       data: [{ value: isInf ? 100 : pct }]
     }],
+    animation: !isInf,
     animationDuration: 1400,
     animationEasing: 'cubicOut'
   }, true);
@@ -2465,51 +2487,103 @@ function renderDeviceSparklines() {
     const ip = el.dataset.ip;
     const hist = ip ? IP_HISTORY.get(ip) : null;
     if (!hist || hist.length < 2) {
-      // Dispose any orphaned ECharts instance attached to this DOM so a
-      // re-render doesn't pile them up; the empty placeholder collapses
-      // via the `:empty` CSS rule.
+      // Not enough history yet — collapse the box via `.ready` (CSS
+      // animates the height down). Dispose stale instance to avoid leaks.
       const stale = echarts.getInstanceByDom(el);
       if (stale) stale.dispose();
+      el.classList.remove('ready');
       el.innerHTML = '';
       return;
     }
-    let chart = echarts.getInstanceByDom(el) || echarts.init(el);
+    // ECharts needs the container to have non-zero width/height BEFORE
+    // init. Expand first so getComputedStyle reports a real size.
+    el.classList.add('ready');
+    let chart = echarts.getInstanceByDom(el);
+    if (!chart) chart = echarts.init(el);
+    const lineColor = t.accent2;
     chart.setOption({
       animation: false,
-      grid: { left: 0, right: 0, top: 1, bottom: 1 },
+      grid: { left: 0, right: 0, top: 2, bottom: 2 },
       xAxis: { type: 'time', show: false, boundaryGap: false },
       yAxis: { type: 'value', show: false, min: 0 },
       series: [{
         type: 'line',
         data: hist.map(h => [h.t, h.n]),
-        smooth: true,
+        smooth: 0.4,
         symbol: 'none',
-        lineStyle: { color: t.accent, width: 1.4 },
-        areaStyle: { color: t.accent, opacity: 0.18 }
+        lineStyle: { color: lineColor, width: 1.6 },
+        areaStyle: {
+          color: {
+            type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+            colorStops: [
+              { offset: 0, color: _withAlpha(lineColor, 0.35) },
+              { offset: 1, color: _withAlpha(lineColor, 0)    }
+            ]
+          }
+        }
       }],
       tooltip: { show: false }
     }, { notMerge: true });
+    // Defer a resize in case the height transition hadn't completed when
+    // ECharts measured the container.
+    setTimeout(() => chart.resize(), 220);
   });
 }
 
 
+// Compose an ECharts linear gradient between two colors, top→bottom.
+function _gradient(top, bottom) {
+  return {
+    type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
+    colorStops: [
+      { offset: 0, color: top },
+      { offset: 1, color: bottom }
+    ]
+  };
+}
+
+// Append the given alpha (0..1) to a CSS color. Handles hex (#RRGGBB),
+// rgb(), and oklch() — for everything else we fall back to color-mix
+// using accent + transparent.
+function _withAlpha(c, a) {
+  if (!c) return `rgba(255,255,255,${a})`;
+  c = c.trim();
+  if (c.startsWith('#') && c.length === 7) {
+    const n = Math.round(a * 255).toString(16).padStart(2, '0');
+    return c + n;
+  }
+  if (c.startsWith('rgb(')) return c.replace('rgb(', 'rgba(').replace(')', `,${a})`);
+  if (c.startsWith('rgba(')) return c.replace(/,\s*[\d.]+\)$/, `,${a})`);
+  // oklch / hsl / named — wrap with color-mix
+  return `color-mix(in srgb, ${c} ${(a * 100).toFixed(0)}%, transparent)`;
+}
+
 function _usageOption(aggregated, period, total) {
   const t = _chartTheme();
   const peak = aggregated.reduce((m, d) => d.v > m ? d.v : m, 0);
+  const barTop    = t.accent;
+  const barBottom = _withAlpha(t.accent, 0.25);
+  const peakTop    = t.accent2;
+  const peakBottom = _withAlpha(t.accent2, 0.3);
   return {
     backgroundColor: 'transparent',
     animation: true,
-    animationDuration: 650,
+    animationDuration: 750,
     animationEasing: 'cubicOut',
-    grid: { left: 58, right: 10, top: 16, bottom: 26, containLabel: false },
+    animationDelay: (idx) => idx * 20,
+    grid: { left: 56, right: 14, top: 18, bottom: 28, containLabel: false },
     tooltip: {
       trigger: 'axis',
-      backgroundColor: t.surface2,
+      backgroundColor: 'rgba(15, 16, 22, 0.94)',
       borderColor: t.line,
       borderWidth: 1,
-      padding: [8, 12],
+      padding: [10, 14],
+      extraCssText: 'border-radius:10px;backdrop-filter:blur(8px);box-shadow:0 12px 32px rgba(0,0,0,0.45);',
       textStyle: { color: t.ink, fontFamily: 'var(--mono)', fontSize: 11 },
-      axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(255,255,255,0.04)' } },
+      axisPointer: {
+        type: 'shadow',
+        shadowStyle: { color: _withAlpha(t.accent, 0.08) }
+      },
       formatter: (params) => {
         const p = Array.isArray(params) ? params[0] : params;
         if (!p) return '';
@@ -2517,19 +2591,19 @@ function _usageOption(aggregated, period, total) {
         const when = fmtBucketLabel(new Date(p.value[0]), period, true);
         const pct = total > 0 ? (p.value[1] / total) * 100 : 0;
         const pctStr = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
-        return `<div style="color:${t.ink3};font-size:9px;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">${escapeHtml(when)}</div>`
-             + `<div style="color:${t.ink};font-size:14px;font-weight:600;font-family:var(--serif)">${sz.value}<span style="color:${t.ink3};font-size:11px;margin-inline-start:4px">${sz.unit}</span></div>`
-             + `<div style="color:${t.ink3};font-size:9px;text-transform:uppercase;letter-spacing:.06em;margin-top:4px">${pctStr}% ${escapeHtml(I18N[LANG].usageOfTotal)}</div>`;
+        return `<div style="color:${t.ink3};font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px">${escapeHtml(when)}</div>`
+             + `<div style="color:${t.ink};font-size:18px;font-weight:700;font-family:var(--serif);line-height:1">${sz.value}<span style="color:${t.ink3};font-size:11px;margin-inline-start:5px;font-weight:400;font-family:var(--mono)">${sz.unit}</span></div>`
+             + `<div style="color:${t.ink3};font-size:9px;text-transform:uppercase;letter-spacing:.08em;margin-top:5px">${pctStr}% ${escapeHtml(I18N[LANG].usageOfTotal)}</div>`;
       }
     },
     xAxis: {
       type: 'time',
-      boundaryGap: ['2%', '2%'],
+      boundaryGap: ['3%', '3%'],
       axisLine: { show: false },
       axisTick: { show: false },
       axisLabel: {
         color: t.ink3, fontSize: 10, fontFamily: 'var(--mono)',
-        hideOverlap: true,
+        hideOverlap: true, margin: 12,
         formatter: (val) => fmtBucketLabel(new Date(val), period)
       }
     },
@@ -2539,20 +2613,33 @@ function _usageOption(aggregated, period, total) {
       axisTick: { show: false },
       splitNumber: 3,
       axisLabel: {
-        color: t.ink3, fontSize: 10, fontFamily: 'var(--mono)',
+        color: t.ink3, fontSize: 10, fontFamily: 'var(--mono)', margin: 14,
         formatter: (val) => { const s = fmtSize(val); return s.value + s.unit; }
       },
-      splitLine: { lineStyle: { color: t.line, type: 'solid' } }
+      splitLine: {
+        lineStyle: { color: _withAlpha(t.ink, 0.06), type: 'dashed', width: 1 }
+      }
     },
     series: [{
       type: 'bar',
       data: aggregated.map(d => [d.t.getTime(), d.v]),
       itemStyle: {
-        color: (p) => (p.value[1] >= peak && p.value[1] > 0) ? t.accent2 : t.accent,
-        borderRadius: [4, 4, 0, 0]
+        color: (p) =>
+          (p.value[1] >= peak && p.value[1] > 0)
+            ? _gradient(peakTop, peakBottom)
+            : _gradient(barTop, barBottom),
+        borderRadius: [6, 6, 0, 0]
       },
-      barMaxWidth: 38,
-      emphasis: { itemStyle: { color: t.accent2 } }
+      barMaxWidth: 32,
+      emphasis: {
+        focus: 'series',
+        itemStyle: {
+          color: _gradient(peakTop, peakBottom),
+          shadowColor: _withAlpha(t.accent2, 0.5),
+          shadowBlur: 12,
+          shadowOffsetY: -2
+        }
+      }
     }]
   };
 }
