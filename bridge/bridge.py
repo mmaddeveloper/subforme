@@ -57,6 +57,13 @@ except ValueError as _e:
 # overload the panel. 50 is well above any realistic per-user IP count.
 MAX_DEVICES = max(1, min(MAX_DEVICES, 50))
 BIND_HOST = os.environ.get("BIND_HOST", "127.0.0.1")
+STATIC_DIR = os.environ.get("STATIC_DIR", "/opt/subforme-bridge/static")
+# Whitelisted static files the bridge will serve. Keep tight — the bridge
+# runs as root and the directory lives in its own data dir, but a
+# permissive any-file handler would be the kind of thing that bites later.
+STATIC_ALLOW = {
+    "echarts.min.js": "application/javascript; charset=utf-8",
+}
 TLS_CERT_FILE = os.environ.get("TLS_CERT_FILE", "").strip() or None
 TLS_KEY_FILE = os.environ.get("TLS_KEY_FILE", "").strip() or None
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "").strip() or None
@@ -309,10 +316,44 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
 
+    def _serve_static(self, name: str):
+        """Serve a whitelisted file from STATIC_DIR. Treated as immutable
+        (long Cache-Control) because the URL is meant to be content-pinned
+        — bump the filename / install version to invalidate."""
+        ctype = STATIC_ALLOW.get(name)
+        if not ctype:
+            return self._json(404, {"error": "not found"})
+        # Defense in depth: even though `name` was matched against an
+        # alphanumeric whitelist key, normalize the final path and reject
+        # anything that ends up outside STATIC_DIR.
+        full = os.path.realpath(os.path.join(STATIC_DIR, name))
+        if not full.startswith(os.path.realpath(STATIC_DIR) + os.sep) and full != os.path.realpath(os.path.join(STATIC_DIR, name)):
+            return self._json(404, {"error": "not found"})
+        try:
+            with open(full, "rb") as f:
+                body = f.read()
+        except FileNotFoundError:
+            return self._json(404, {"error": "not found"})
+        except OSError as e:
+            print(f"[bridge] static read {name} failed: {e}", file=sys.stderr)
+            return self._json(500, {"error": "read failed"})
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+        cors = _cors_origin(self.headers.get("Origin"))
+        if cors:
+            self.send_header("Access-Control-Allow-Origin", cors)
+            self.send_header("Vary", "Origin")
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         path = urllib.parse.urlparse(self.path).path
         if path == "/healthz":
             return self._json(200, {"ok": True})
+        if path.startswith("/static/"):
+            return self._serve_static(path[len("/static/"):])
         prefix = "/api/sub/online/"
         if not path.startswith(prefix):
             return self._json(404, {"error": "not found"})

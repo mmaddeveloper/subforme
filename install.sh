@@ -151,6 +151,7 @@ if [ "$PANEL_DIRECT_TLS" = "true" ] && [ -n "$PANEL_SSL_KEY" ] && [ -f "$PANEL_S
     BRIDGE_BIND="0.0.0.0"
     [ "$BRIDGE_PORT" = "8787" ] && BRIDGE_PORT="8443"
     ENDPOINT_URL="https://$PANEL_HOSTNAME:$BRIDGE_PORT/api/sub/online/{token}"
+    ECHARTS_URL="https://$PANEL_HOSTNAME:$BRIDGE_PORT/static/echarts.min.js"
     # Only set Origin when we actually have a port to attach to it —
     # `https://host:` would be a malformed origin and break every CORS check.
     if [ -n "$PANEL_UVICORN_PORT" ]; then
@@ -165,8 +166,14 @@ elif [ "$PANEL_DIRECT_TLS" = "true" ]; then
     # /sub-online/ request.
     echo "    ⚠ direct-TLS panel detected but couldn't extract hostname from $PANEL_SSL_CERT" >&2
     echo "    ⚠ install openssl or rename the cert dir to .../certs/<host>/fullchain.pem then re-run" >&2
+    ENDPOINT_URL="/sub-online/{token}"
+    ECHARTS_URL="/sub-online/static/echarts.min.js"
+    ALLOWED_ORIGIN_VAL=""
 else
     ENDPOINT_URL="/sub-online/{token}"
+    # nginx-fronted setups need a second proxy_pass block for /sub-static/
+    # → bridge's /static/. The installer prints it in the final hint.
+    ECHARTS_URL="/sub-static/echarts.min.js"
     ALLOWED_ORIGIN_VAL=""
 fi
 
@@ -305,6 +312,21 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
     chmod +x "$BRIDGE_DIR/bridge.py"
     echo "    ✓ bridge service downloaded"
 
+    # The template renders charts via ECharts. We serve the library from the
+    # bridge so users never depend on an external CDN. echarts.simple covers
+    # the components we need (bar, line, tooltip, grid, dataZoom) at ~420KB.
+    mkdir -p "$BRIDGE_DIR/static"
+    ECHARTS_VERSION="${ECHARTS_VERSION:-5.5.1}"
+    if [ ! -s "$BRIDGE_DIR/static/echarts.min.js" ]; then
+        echo "    ↻ downloading echarts.simple v$ECHARTS_VERSION..."
+        if download "https://cdn.jsdelivr.net/npm/echarts@$ECHARTS_VERSION/dist/echarts.simple.min.js" "$BRIDGE_DIR/static/echarts.min.js"; then
+            echo "    ✓ ECharts installed (~$(du -h "$BRIDGE_DIR/static/echarts.min.js" | cut -f1))"
+        else
+            echo "    ⚠ couldn't fetch ECharts — chart sections will degrade to plain text until you grab it manually:" >&2
+            echo "    curl -fsSL https://cdn.jsdelivr.net/npm/echarts@$ECHARTS_VERSION/dist/echarts.simple.min.js -o $BRIDGE_DIR/static/echarts.min.js" >&2
+        fi
+    fi
+
     # Rewrite .env from scratch — never just append, so re-runs converge to
     # the right state instead of stacking stale settings. printf %s keeps
     # values containing $, `, \, " intact (heredoc would shell-expand them).
@@ -315,6 +337,7 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
         printf 'PG_ADMIN_PASS=%s\n' "$ADMIN_PASS"
         printf 'PORT=%s\n'          "$BRIDGE_PORT"
         printf 'BIND_HOST=%s\n'     "$BRIDGE_BIND"
+        printf 'STATIC_DIR=%s\n'    "$BRIDGE_DIR/static"
         if [ "$BRIDGE_TLS" = "true" ]; then
             printf 'TLS_CERT_FILE=%s\n' "$PANEL_SSL_CERT"
             printf 'TLS_KEY_FILE=%s\n'  "$PANEL_SSL_KEY"
@@ -382,6 +405,16 @@ EOF
         echo "        const ONLINE_IPS_ENDPOINT = '$ENDPOINT_URL';" >&2
     fi
 
+    # Same idea for the ECharts library URL (served by the bridge under
+    # /static/echarts.min.js). Skip silently if the template hasn't been
+    # updated to consume it yet — newer installs.sh, older index.html.
+    if grep -q "const ECHARTS_URL = '" "$TEMPLATE_DIR/index.html"; then
+        ESC=$(printf '%s' "$ECHARTS_URL" | sed 's/[\\&|]/\\&/g')
+        sed -i.bak "s|const ECHARTS_URL = '[^']*';|const ECHARTS_URL = '$ESC';|" "$TEMPLATE_DIR/index.html"
+        rm -f "$TEMPLATE_DIR/index.html.bak"
+        echo "    ✓ template ECHARTS_URL    -> $ECHARTS_URL"
+    fi
+
     if [ "$BRIDGE_TLS" = "true" ]; then
         # Bridge listens publicly with TLS; open the firewall best-effort.
         # Order: firewalld (Fedora/RHEL) -> ufw (Debian/Ubuntu) -> raw iptables.
@@ -410,10 +443,15 @@ NOTE
         cat <<NGINX
 
 ==> Final step (manual): expose the bridge same-origin via nginx.
-    Add inside your panel's server { } block, then reload nginx:
+    Add BOTH location blocks inside your panel's server { } block, then
+    reload nginx (one for the IPs API, one for the ECharts library):
 
     location /sub-online/ {
         proxy_pass http://127.0.0.1:$BRIDGE_PORT/api/sub/online/;
+        proxy_set_header Host \$host;
+    }
+    location /sub-static/ {
+        proxy_pass http://127.0.0.1:$BRIDGE_PORT/static/;
         proxy_set_header Host \$host;
     }
 
