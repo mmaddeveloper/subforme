@@ -313,17 +313,23 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
     echo "    ✓ bridge service downloaded"
 
     # The template renders charts via ECharts. We serve the library from the
-    # bridge so users never depend on an external CDN. echarts.simple covers
-    # the components we need (bar, line, tooltip, grid, dataZoom) at ~420KB.
+    # bridge so users never depend on an external CDN. Use the FULL build —
+    # echarts.simple doesn't include `gauge` and we need it for the
+    # data-limit ring. ~1MB, cached immutable after first load.
     mkdir -p "$BRIDGE_DIR/static"
     ECHARTS_VERSION="${ECHARTS_VERSION:-5.5.1}"
-    if [ ! -s "$BRIDGE_DIR/static/echarts.min.js" ]; then
-        echo "    ↻ downloading echarts.simple v$ECHARTS_VERSION..."
-        if download "https://cdn.jsdelivr.net/npm/echarts@$ECHARTS_VERSION/dist/echarts.simple.min.js" "$BRIDGE_DIR/static/echarts.min.js"; then
-            echo "    ✓ ECharts installed (~$(du -h "$BRIDGE_DIR/static/echarts.min.js" | cut -f1))"
+    ECHARTS_TAG_FILE="$BRIDGE_DIR/static/.echarts-tag"
+    EXPECTED_TAG="echarts-full-$ECHARTS_VERSION"
+    CURRENT_TAG=""
+    [ -f "$ECHARTS_TAG_FILE" ] && CURRENT_TAG=$(cat "$ECHARTS_TAG_FILE")
+    if [ "$CURRENT_TAG" != "$EXPECTED_TAG" ] || [ ! -s "$BRIDGE_DIR/static/echarts.min.js" ]; then
+        echo "    ↻ downloading echarts v$ECHARTS_VERSION (full build)..."
+        if download "https://cdn.jsdelivr.net/npm/echarts@$ECHARTS_VERSION/dist/echarts.min.js" "$BRIDGE_DIR/static/echarts.min.js"; then
+            echo "$EXPECTED_TAG" > "$ECHARTS_TAG_FILE"
+            echo "    ✓ ECharts installed ($(du -h "$BRIDGE_DIR/static/echarts.min.js" | cut -f1))"
         else
-            echo "    ⚠ couldn't fetch ECharts — chart sections will degrade to plain text until you grab it manually:" >&2
-            echo "    curl -fsSL https://cdn.jsdelivr.net/npm/echarts@$ECHARTS_VERSION/dist/echarts.simple.min.js -o $BRIDGE_DIR/static/echarts.min.js" >&2
+            echo "    ⚠ couldn't fetch ECharts — chart sections will degrade until you grab it manually:" >&2
+            echo "    curl -fsSL https://cdn.jsdelivr.net/npm/echarts@$ECHARTS_VERSION/dist/echarts.min.js -o $BRIDGE_DIR/static/echarts.min.js" >&2
         fi
     fi
 

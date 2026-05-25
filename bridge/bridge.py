@@ -376,6 +376,37 @@ class Handler(BaseHTTPRequestHandler):
             print(f"[bridge] unhandled error for token=…{tail}: {e}", file=sys.stderr)
             return self._json(500, [])
 
+    def do_HEAD(self):
+        # Browsers may HEAD a static URL before fetching, and admins use
+        # `curl -I` to sanity-check the bridge. Mirror the routing of
+        # do_GET but only emit headers, not the body.
+        path = urllib.parse.urlparse(self.path).path
+        if path == "/healthz" or path.startswith("/api/sub/online/"):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        if path.startswith("/static/"):
+            name = path[len("/static/"):]
+            ctype = STATIC_ALLOW.get(name)
+            if not ctype:
+                self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
+            try:
+                size = os.path.getsize(os.path.join(STATIC_DIR, name))
+            except OSError:
+                self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(size))
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            self.end_headers()
+            return
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def log_message(self, *_):
         pass  # silence default access logs
 
