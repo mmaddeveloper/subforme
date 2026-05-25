@@ -813,9 +813,7 @@ html, body { background: var(--bg); color: var(--ink); min-height: 100vh; overfl
    ========================================================= */
 .modal-bg {
   position: fixed; inset: 0;
-  background: rgba(0,0,0,0.7);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  background: rgba(0,0,0,0.55);
   display: none;
   align-items: center; justify-content: center;
   z-index: 1000;
@@ -835,13 +833,6 @@ html, body { background: var(--bg); color: var(--ink); min-height: 100vh; overfl
   animation: pop 0.35s both cubic-bezier(0.34, 1.56, 0.64, 1);
   max-height: 90vh;
   display: flex; flex-direction: column;
-}
-.modal::before {
-  content: '';
-  position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), var(--accent-2), var(--accent), transparent);
-  background-size: 200% 100%;
-  animation: shimmer 3s linear infinite;
 }
 .modal-head {
   padding: 16px 20px;
