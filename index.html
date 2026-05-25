@@ -2359,8 +2359,16 @@ function loadECharts() {
     const s = document.createElement('script');
     s.src = ECHARTS_URL;
     s.async = true;
-    s.onload = () => window.echarts ? resolve(window.echarts) : reject(new Error('echarts global missing'));
-    s.onerror = () => reject(new Error('echarts script failed to load'));
+    s.onload = () => window.echarts
+      ? resolve(window.echarts)
+      : (_echartsPromise = null, reject(new Error('echarts global missing')));
+    s.onerror = () => {
+      // Drop the cached promise so a future render attempt (e.g. after
+      // a user comes back from a network blip) actually retries instead
+      // of returning the same rejected promise forever.
+      _echartsPromise = null;
+      reject(new Error('echarts script failed to load'));
+    };
     document.head.appendChild(s);
   });
   return _echartsPromise;
@@ -2465,7 +2473,10 @@ async function renderRingGauge(used, total) {
   function renderItem(params, api) {
     const valOnRadian = api.value(1);
     const coords = api.coord([api.value(0), valOnRadian]);
-    const polarEndRadian = coords[3];
+    // When the value is 0 (or very close to 0), polar maps it to angle 0
+    // and the pointer triangle collapses to a single pixel. Clamp to at
+    // least ~1° so the needle always has a visible footprint.
+    const polarEndRadian = Math.max(coords[3], Math.PI / 180);
     return {
       type: 'group',
       children: [
@@ -2661,8 +2672,11 @@ function _usageOption(aggregated, period, total) {
   const pointerColor = '#7581BD';
   // Pick a value to snap to on first render — the demo uses a hard-coded
   // date; we use the latest bucket so the cursor sits on the most recent
-  // data point. Falls back to the first bucket if data is empty.
-  const initialPointerValue = seriesData.length ? seriesData[seriesData.length - 1][0] : 0;
+  // data point. When data is empty we fall back to "now" rather than 0 —
+  // an axis value of 0 ms renders as "1970-01-01" in the pointer label.
+  // (In practice _usageEmpty() short-circuits before we get here, but
+  // the guard makes this option safe in isolation.)
+  const initialPointerValue = seriesData.length ? seriesData[seriesData.length - 1][0] : Date.now();
 
   return {
     title: { show: false },

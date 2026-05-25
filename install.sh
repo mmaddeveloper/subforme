@@ -333,14 +333,11 @@ if [ "$INSTALL_BRIDGE" = "true" ]; then
         fi
     fi
 
-    # Panel artwork for the custom gauge (drawn by clipping this PNG to a
-    # sector — see the `custom-gauge` ECharts demo). Tiny one-time download.
-    if [ ! -s "$BRIDGE_DIR/static/custom-gauge-panel.png" ]; then
-        download "https://echarts.apache.org/examples/data/asset/img/custom-gauge-panel.png" \
-                 "$BRIDGE_DIR/static/custom-gauge-panel.png" \
-            && echo "    ✓ gauge panel image installed" \
-            || echo "    ⚠ couldn't fetch the gauge panel image — gauge will still render but flat" >&2
-    fi
+    # Older installs (pre-fe9752a) downloaded custom-gauge-panel.png next
+    # to echarts.min.js for the original image-clipped gauge. The gauge is
+    # now drawn from theme-colored shapes, so the image is dead weight —
+    # remove it on upgrade to keep the static dir tidy.
+    rm -f "$BRIDGE_DIR/static/custom-gauge-panel.png"
 
     # Rewrite .env from scratch — never just append, so re-runs converge to
     # the right state instead of stacking stale settings. printf %s keeps

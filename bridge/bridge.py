@@ -63,7 +63,6 @@ STATIC_DIR = os.environ.get("STATIC_DIR", "/opt/subforme-bridge/static")
 # permissive any-file handler would be the kind of thing that bites later.
 STATIC_ALLOW = {
     "echarts.min.js": "application/javascript; charset=utf-8",
-    "custom-gauge-panel.png": "image/png",
 }
 TLS_CERT_FILE = os.environ.get("TLS_CERT_FILE", "").strip() or None
 TLS_KEY_FILE = os.environ.get("TLS_KEY_FILE", "").strip() or None
@@ -317,18 +316,30 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Max-Age", "600")
         self.end_headers()
 
+    def _resolve_static(self, name: str):
+        """Return (ctype, abs_path) for a whitelisted static file, or
+        (None, None) if `name` is not on the whitelist or escapes
+        STATIC_DIR via a symlink. Used by both do_GET and do_HEAD so
+        the validation rules stay in sync."""
+        ctype = STATIC_ALLOW.get(name)
+        if not ctype:
+            return None, None
+        # Defense in depth: even though `name` was matched against an
+        # alphanumeric whitelist key, normalize the final path and reject
+        # anything that ends up outside STATIC_DIR (e.g. via a symlink
+        # somebody dropped into the static dir).
+        root = os.path.realpath(STATIC_DIR)
+        full = os.path.realpath(os.path.join(STATIC_DIR, name))
+        if not full.startswith(root + os.sep):
+            return None, None
+        return ctype, full
+
     def _serve_static(self, name: str):
         """Serve a whitelisted file from STATIC_DIR. Treated as immutable
         (long Cache-Control) because the URL is meant to be content-pinned
         — bump the filename / install version to invalidate."""
-        ctype = STATIC_ALLOW.get(name)
+        ctype, full = self._resolve_static(name)
         if not ctype:
-            return self._json(404, {"error": "not found"})
-        # Defense in depth: even though `name` was matched against an
-        # alphanumeric whitelist key, normalize the final path and reject
-        # anything that ends up outside STATIC_DIR.
-        full = os.path.realpath(os.path.join(STATIC_DIR, name))
-        if not full.startswith(os.path.realpath(STATIC_DIR) + os.sep) and full != os.path.realpath(os.path.join(STATIC_DIR, name)):
             return self._json(404, {"error": "not found"})
         try:
             with open(full, "rb") as f:
@@ -391,11 +402,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path.startswith("/static/"):
             name = path[len("/static/"):]
-            ctype = STATIC_ALLOW.get(name)
+            ctype, full = self._resolve_static(name)
             if not ctype:
                 self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
             try:
-                size = os.path.getsize(os.path.join(STATIC_DIR, name))
+                size = os.path.getsize(full)
             except OSError:
                 self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
             self.send_response(200)
