@@ -721,15 +721,15 @@ button:focus-visible, a:focus-visible { outline-offset: 3px; }
      data-status="{{ (user.status.value if user.status is defined and user.status else 'active') | e }}"
      data-data-limit="{{ user.data_limit if user.data_limit else 0 }}"
      data-used-traffic="{{ user.used_traffic if user.used_traffic else 0 }}"
-     data-expire="{{ user.expire if user.expire else 0 }}"
-     data-subscription-url="{{ user.subscription_url | e }}"
+     data-expire="{{ (user.expire.timestamp() | int) if (user.expire and user.expire.timestamp is defined) else (user.expire or 0) }}"
+     data-subscription-url="{{ (user.subscription_url | e) if (user.subscription_url is defined and user.subscription_url) else '' }}"
      data-last-agent="{{ user.sub_last_user_agent | e if user.sub_last_user_agent is defined and user.sub_last_user_agent else '' }}"
      data-sub-updated="{{ user.sub_updated_at if user.sub_updated_at is defined and user.sub_updated_at else '' }}"
-     data-online-at="{{ user.online_at if user.online_at is defined and user.online_at else '' }}"
+     data-online-at="{{ (user.online_at.timestamp() | int) if (user.online_at is defined and user.online_at) else '' }}"
      style="display:none"></div>
 
 <script type="text/plain" id="pgLinks">
-{% for link in user.links %}{{ link }}
+{% for link in links %}{{ link }}
 {% endfor %}
 </script>
 
