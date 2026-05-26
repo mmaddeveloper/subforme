@@ -43,7 +43,9 @@ BRIDGE_DIR="/opt/subforme-bridge"
 while [ $# -gt 0 ]; do
     case "$1" in
         --yes|-y)       YES=true; shift ;;
-        --panel)        PANEL="$2"; shift 2 ;;
+        --panel)
+            { [ $# -ge 2 ] && [ "${2:0:2}" != "--" ]; } || { echo "✗ --panel requires a value" >&2; exit 1; }
+            PANEL="$2"; shift 2 ;;
         --keep-env)     KEEP_ENV=true; shift ;;
         --keep-template) KEEP_TEMPLATE=true; shift ;;
         -h|--help)
@@ -138,10 +140,14 @@ fi
 # 5) nginx — we can't touch the user's config safely; print the snippet
 cat <<NGINX
 
-==> Manual step: if you added the nginx snippet during install, remove it now:
+==> Manual step: if you added the nginx snippet during install, remove BOTH blocks now:
 
     location /sub-online/ {
         proxy_pass http://127.0.0.1:8787/api/sub/online/;
+        proxy_set_header Host \$host;
+    }
+    location /sub-static/ {
+        proxy_pass http://127.0.0.1:8787/static/;
         proxy_set_header Host \$host;
     }
 

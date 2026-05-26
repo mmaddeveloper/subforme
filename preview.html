@@ -51,7 +51,7 @@
   --ink:       oklch(0.95 0.008 165);
   --ink-2:     oklch(0.80 0.011 165);
   --ink-3:     oklch(0.69 0.013 165);
-  --ink-faint: oklch(0.56 0.012 165);
+  --ink-4: oklch(0.56 0.012 165);
 
   /* Accent (pine) — bright enough to read on dark */
   --accent:       oklch(0.745 0.115 162);
@@ -81,7 +81,7 @@
     --ink:       oklch(0.255 0.018 165);
     --ink-2:     oklch(0.42 0.016 165);
     --ink-3:     oklch(0.49 0.016 165);
-    --ink-faint: oklch(0.60 0.014 165);
+    --ink-4: oklch(0.60 0.014 165);
     --accent:       oklch(0.52 0.115 162);
     --accent-2:     oklch(0.46 0.115 162);
     --accent-ink:   oklch(0.99 0.003 165);
@@ -105,7 +105,7 @@
   --ink:       oklch(0.255 0.018 165);
   --ink-2:     oklch(0.42 0.016 165);
   --ink-3:     oklch(0.49 0.016 165);
-  --ink-faint: oklch(0.60 0.014 165);
+  --ink-4: oklch(0.60 0.014 165);
   --accent:       oklch(0.52 0.115 162);
   --accent-2:     oklch(0.46 0.115 162);
   --accent-ink:   oklch(0.99 0.003 165);
@@ -195,7 +195,7 @@ body {
   letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3);
 }
 [dir="rtl"] .hero-status { letter-spacing: 0; text-transform: none; }
-.hero-status .pip { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ink-faint); }
+.hero-status .pip { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--ink-4); }
 .hero-status.s-active { color: var(--ok); } .hero-status.s-active .pip { background: var(--ok); }
 .hero-status.s-on_hold, .hero-status.s-limited { color: var(--warn); }
 .hero-status.s-on_hold .pip, .hero-status.s-limited .pip { background: var(--warn); }
@@ -375,12 +375,12 @@ body {
 .badge-now { flex-shrink: 0; font-family: var(--font-mono); font-size: 0.5625rem; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.1rem 0.4rem; border-radius: var(--radius-pill); background: var(--accent-quiet); color: var(--accent); }
 .device-meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-xs); font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-3); margin-top: 2px; font-variant-numeric: tabular-nums; }
 .device-meta .ip { color: var(--ink-2); }
-.device-meta .sep { color: var(--ink-faint); }
+.device-meta .sep { color: var(--ink-4); }
 .device-spark { width: 100%; height: 0; margin-top: 0; transition: height 0.2s ease, margin 0.2s ease; }
 .device-spark.ready { height: 1.6rem; margin-top: var(--space-2xs); }
 .device-status { flex-shrink: 0; display: flex; align-items: center; gap: 0.4rem; font-family: var(--font-mono); font-size: var(--text-xs); letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-3); }
 [dir="rtl"] .device-status { letter-spacing: 0; text-transform: none; }
-.device-status .pip { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--ink-faint); }
+.device-status .pip { width: 0.4rem; height: 0.4rem; border-radius: 50%; background: var(--ink-4); }
 .device-status.online { color: var(--ok); } .device-status.online .pip { background: var(--ok); }
 
 .devices-note { display: flex; align-items: flex-start; gap: var(--space-xs); margin-top: var(--space-sm); padding: 0 var(--space-2xs); font-size: var(--text-xs); color: var(--ink-3); line-height: 1.6; }
@@ -389,7 +389,7 @@ body {
 .devices-empty, .configs-empty { padding: var(--space-xl) var(--space-md); text-align: center; color: var(--ink-3); }
 .devices-empty .ic, .configs-empty .ic { font-size: 1.6rem; opacity: 0.5; margin-bottom: var(--space-xs); }
 .devices-empty .txt, .configs-empty .txt { font-size: var(--text-sm); }
-.devices-empty .hint, .configs-empty .hint { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-faint); margin-top: var(--space-2xs); }
+.devices-empty .hint, .configs-empty .hint { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--ink-4); margin-top: var(--space-2xs); }
 
 /* =========================================================
    USAGE
