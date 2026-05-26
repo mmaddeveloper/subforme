@@ -3,7 +3,7 @@
 # Plus Collection — PasarGuard Subscription Template
 
 A modern, single-file subscription page template for [PasarGuard](https://github.com/PasarGuard/panel) panel.
-Personalized themes, connected-device tracking, multi-language support — no build step required.
+Light and dark themes, connected-device tracking, multi-language support — no build step required.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-c6ff3d.svg)](LICENSE)
 [![PasarGuard](https://img.shields.io/badge/PasarGuard-compatible-7c5cff.svg)](https://github.com/PasarGuard/panel)
@@ -11,31 +11,25 @@ Personalized themes, connected-device tracking, multi-language support — no bu
 
 [Installation](#installation) · [Customization](#customization) · [فارسی](#فارسی)
 
-<img src="screenshots/theme-midnight.png" alt="Plus Collection preview" width="380" />
-
 </div>
 
 ---
 
 ## Features
 
-- **4 switchable themes** — Midnight, Gold, Emerald, Crimson — saved per-user in `localStorage`
-- **24 selectable avatars** for personalization
+- **Light & dark, system-aware** — a daylight Stone theme and a Midnight dark theme; follows the OS by default and remembers a manual choice in `localStorage`
 - **Connected devices** — shows the client app, OS, online status, and last-seen time (parsed from the User-Agent). Optional live-IP endpoint for full device listing.
 - **Smart alerts** — warns the user when their subscription is expiring or data is running low
-- **Automatic tier badge** — Bronze / Silver / Gold / Platinum based on plan size
 - **Bilingual** — Persian (RTL) and English (LTR) with instant switching
 - **OS auto-detection** — recommends the right apps for the visitor's platform
 - **One-tap import** for Hiddify, v2rayNG, Streisand, and more
-- **QR codes** for every config, plus Base64 copy
+- **QR codes** for the subscription link and every config
 - **Protocol badges** — VLESS, VMess, Trojan, Shadowsocks, Hysteria2, WireGuard, TUIC
 - **Single HTML file** — no Node.js, no build, no dependencies to install
 
 ## Screenshots
 
-| Midnight | Gold | Crimson |
-|----------|------|---------|
-| <img src="screenshots/theme-midnight.png" width="220"/> | <img src="screenshots/theme-gold.png" width="220"/> | <img src="screenshots/theme-crimson.png" width="220"/> |
+> Fresh screenshots for the v2.0 (Pine & Stone) redesign are pending. Open any subscription link, or `preview.html` locally, and capture a light and a dark view into `screenshots/`.
 
 ## Installation
 
@@ -234,11 +228,9 @@ Built for the [PasarGuard](https://github.com/PasarGuard/panel) panel.
 یک قالب صفحه اشتراک مدرن و تک‌فایل برای پنل **PasarGuard**.
 
 ### ویژگی‌ها
-- **۴ تم رنگی** قابل انتخاب (Midnight، Gold، Emerald، Crimson)
-- **۲۴ آواتار** قابل انتخاب
+- **تمِ روشن و تیره** هماهنگ با سیستم (تمِ روزِ Stone و تمِ شبِ Midnight)، با ذخیره‌ی انتخابِ دستی
 - **دستگاه‌های متصل** با تشخیص اپ و سیستم‌عامل از روی User-Agent
 - **اعلان هوشمند** برای انقضای نزدیک یا اتمام حجم
-- **سیستم Tier خودکار** (برنز/نقره/طلا/پلاتین)
 - **دو زبانه** فارسی و انگلیسی با سوییچ لحظه‌ای
 - **تک فایل HTML** بدون نیاز به build
 
