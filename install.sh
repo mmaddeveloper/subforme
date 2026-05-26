@@ -238,8 +238,17 @@ validate_env_value() {
 }
 
 # -------------------- 1) template --------------------
+# Prefer the release asset (served from GitHub's release CDN, usually
+# reachable even where raw.githubusercontent.com is throttled); fall back
+# to the raw URL on main if the release lookup fails — same pattern as the
+# bridge download below, so a missing/empty release asset doesn't hard-fail.
 mkdir -p "$TEMPLATE_DIR"
-download "$RELEASE_LATEST/index.html" "$TEMPLATE_DIR/index.html"
+if ! download "$RELEASE_LATEST/index.html" "$TEMPLATE_DIR/index.html" \
+   && ! download "$REPO_RAW/index.html" "$TEMPLATE_DIR/index.html"; then
+    echo "✗ couldn't download index.html — both the release asset and raw URL failed" >&2
+    echo "    try manually: curl -fsSL $REPO_RAW/index.html -o $TEMPLATE_DIR/index.html" >&2
+    exit 1
+fi
 echo "    ✓ template downloaded"
 
 # -------------------- 2) panel .env --------------------
