@@ -2239,14 +2239,16 @@ if (PG.links.length === 0 && PG.subscription_url) {
 }
 
 async function fetchRawConfigs(subUrl) {
-  // Try the common Marzban/PasarGuard endpoints for raw configs. The
-  // /v2ray suffix is the most widely supported; ?format=v2ray is a
-  // fallback for older or differently-configured panels. Split off any
-  // query string / hash before composing — otherwise `/sub/abc?x=1/v2ray`
-  // is gibberish.
+  // Try the common raw-config endpoints, in panel-preference order:
+  //   /links   — PasarGuard ConfigFormat (plain vless://…/vmess://… URIs)
+  //   /v2ray   — Marzban / older panels
+  //   ?format=v2ray — last-ditch query fallback
+  // Split off any query string / hash before composing — otherwise
+  // `/sub/abc?x=1/links` is gibberish.
   const u = new URL(subUrl, window.location.href);
   const base = u.origin + u.pathname.replace(/\/+$/, '');
   const candidates = [
+    base + '/links',
     base + '/v2ray',
     base + '?format=v2ray' + (u.search ? '&' + u.search.slice(1) : ''),
   ];
